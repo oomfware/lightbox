@@ -1,0 +1,58 @@
+{
+	"$schema": "https://unpkg.com/oxlint/configuration_schema.json",
+	"plugins": ["import", "jsx-a11y", "oxc", "react", "react-perf", "typescript", "unicorn"],
+	"options": {
+		"typeAware": true,
+		"typeCheck": true
+	},
+	"categories": {
+		"correctness": "warn",
+		"perf": "warn",
+		"suspicious": "warn"
+	},
+	"rules": {
+		"curly": "warn",
+		"no-array-constructor": "error",
+		"no-case-declarations": "error",
+		"no-control-regex": "off",
+		"no-empty": "warn",
+		"no-prototype-builtins": "warn",
+		"no-redeclare": "warn",
+		"no-regex-spaces": "warn",
+		"prefer-const": "warn",
+		"prefer-rest-params": "warn",
+		"prefer-spread": "warn",
+		"sort-imports": ["warn", { "ignoreDeclarationSort": true }],
+		"import/no-duplicates": ["error", { "prefer-inline": true }],
+		"import/no-unassigned-import": "off",
+		"jsx-a11y/no-redundant-roles": "off",
+		"react/react-in-jsx-scope": "off",
+		"typescript/consistent-type-imports": [
+			"warn",
+			{ "prefer": "type-imports", "fixStyle": "inline-type-imports" }
+		],
+		"typescript/no-empty-object-type": "warn",
+		"typescript/no-explicit-any": "warn",
+		"typescript/no-misused-promises": "warn",
+		"typescript/no-namespace": ["error", { "allowDeclarations": true }],
+		"typescript/no-require-imports": "error",
+		"typescript/require-await": "warn",
+		"typescript/restrict-plus-operands": "warn"
+	},
+	"overrides": [
+		{
+			"files": ["*.test.ts", "*.test.tsx"],
+			"rules": {
+				"typescript/no-floating-promises": "off"
+			}
+		},
+		{
+			"files": ["src/app.tsx", "src/main.tsx"],
+			"rules": {
+				"jsx-a11y/prefer-tag-over-role": "off",
+				"react-perf/jsx-no-new-function-as-prop": "off",
+				"react-perf/jsx-no-new-object-as-prop": "off"
+			}
+		}
+	]
+}

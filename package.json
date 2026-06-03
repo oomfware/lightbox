@@ -1,0 +1,65 @@
+{
+	"name": "@oomfware/lightbox",
+	"version": "0.0.0",
+	"description": "headless React image lightbox",
+	"license": "0BSD",
+	"repository": {
+		"type": "git",
+		"url": "https://codeberg.org/oomfware/lightbox"
+	},
+	"files": [
+		"dist/",
+		"src/lib/",
+		"!src/lib/**/*.bench.ts",
+		"!src/lib/**/*.test.ts",
+		"!src/lib/**/*.test.tsx"
+	],
+	"type": "module",
+	"exports": {
+		".": "./dist/index.mjs",
+		"./base-ui": "./dist/base-ui.mjs",
+		"./package.json": "./package.json"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "oxlint && tsdown",
+		"build:demo": "vite build",
+		"dev": "vite",
+		"fmt": "oxfmt",
+		"lint": "oxlint",
+		"prepublishOnly": "pnpm run build",
+		"preview": "vite preview",
+		"release": "bumpp"
+	},
+	"dependencies": {
+		"@mary-ext/simple-event-emitter": "^1.0.1"
+	},
+	"devDependencies": {
+		"@base-ui/react": "^1.5.0",
+		"@types/node": "^25.9.1",
+		"@types/react": "^19.2.14",
+		"@types/react-dom": "^19.2.3",
+		"@vitejs/plugin-react": "^6.0.1",
+		"bumpp": "^11.1.0",
+		"oxfmt": "^0.52.0",
+		"oxlint": "^1.67.0",
+		"oxlint-tsgolint": "^0.23.0",
+		"react": "^19.2.6",
+		"react-dom": "^19.2.6",
+		"tsdown": "^0.22.1",
+		"typescript": "^6.0.3",
+		"vite": "^8.0.12"
+	},
+	"peerDependencies": {
+		"@base-ui/react": ">=1.5.0",
+		"react": ">=19.2",
+		"react-dom": ">=19.2"
+	},
+	"peerDependenciesMeta": {
+		"@base-ui/react": {
+			"optional": true
+		}
+	}
+}

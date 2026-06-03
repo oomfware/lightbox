@@ -1,0 +1,26 @@
+{
+	"compilerOptions": {
+		"target": "esnext",
+		"lib": ["esnext"],
+		"types": ["node"],
+		"moduleDetection": "force",
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"allowImportingTsExtensions": true,
+		"strict": true,
+		"esModuleInterop": true,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+		"erasableSyntaxOnly": true,
+		"skipLibCheck": true,
+		"noEmit": true
+	},
+	"include": [
+		"tsdown.config.ts",
+		"vite.config.ts",
+		"src/lib/**/*.bench.ts",
+		"src/lib/**/*.test.ts",
+		"src/lib/**/*.test.tsx"
+	]
+}
