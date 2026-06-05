@@ -153,7 +153,9 @@ export const Image = ({ className, index, style }: LightboxImageProps) => {
 				// Slide's grid, so the on-screen pixels and the engine's pan bounds are
 				// identical. explicit px (never %) means small images aren't upscaled
 				// and the grid percentage-height circularity can't bite. sizes are
-				// always ≤ the viewport, so it can't overflow.
+				// always ≤ the viewport, so it can't overflow. a 0px fallback keeps the
+				// <img> collapsed until its size is known (no declared dimensions and
+				// not yet loaded), avoiding a full-viewport flash before the real fit.
 				display: 'block',
 				width: fitted?.width ? `${fitted.width}px` : '0px',
 				height: fitted?.height ? `${fitted.height}px` : '0px',

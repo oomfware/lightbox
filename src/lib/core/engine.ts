@@ -656,7 +656,12 @@ export class LightboxEngine {
 		const nat = this.#naturalSizes[i];
 		const vp = this.#viewport;
 		if (!nat || !nat.width || !nat.height || !vp.width || !vp.height) {
-			return vp;
+			// size not yet known (no declared dimensions and the image hasn't
+			// loaded, or the viewport isn't measured). report zero rather than the
+			// viewport so the renderer leaves the <img> collapsed instead of
+			// stretching it full-bleed for a frame and then snapping it down to the
+			// real fitted size once the natural size lands.
+			return { height: 0, width: 0 };
 		}
 		const containK = Math.min(vp.width / nat.width, vp.height / nat.height);
 		const k =
