@@ -405,6 +405,11 @@ export class LightboxEngine {
 	 */
 	wheel(x: number, y: number, deltaY: number): void {
 		this.#stopSprings();
+		// a wheel zoom can interrupt a paging settle; snap the track to rest so the
+		// cursor-anchored zoom (#toCenter) is taken against a centered slide. wheel
+		// zooming is itself instant, so a snap — not a spring — keeps the two
+		// consistent. a no-op when already at rest.
+		this.#trackX.set(-this.index * this.#viewport.width);
 		const focal = this.#toCenter(x, y);
 		const factor = Math.exp(-deltaY * 0.01);
 		this.#zoomAbout(focal, this.#scale.value * factor);
@@ -417,6 +422,14 @@ export class LightboxEngine {
 	// #region gesture internals
 
 	#beginPinch(): void {
+		// a pinch can begin mid-page (#stopSprings froze the track part-way through
+		// its settle). snap it to rest before capturing the anchor below so the
+		// pinch midpoint (#toCenter) and start pan are taken against a centered
+		// slide, not one offset by the leftover paging distance. by the time two
+		// fingers coordinate down the track has nearly settled, so this is a small
+		// correction (a no-op when already at rest), and pinch tracks fingers
+		// instantly, so a snap stays consistent with the gesture.
+		this.#trackX.set(-this.index * this.#viewport.width);
 		const [a, b] = [...this.#pointers.values()];
 		this.#gesture = {
 			kind: 'pinch',
@@ -584,6 +597,14 @@ export class LightboxEngine {
 	#doubleTap(x: number, y: number): void {
 		// reached only with zero pointers down, so the gesture is already idle; a
 		// fresh zoom intent (in or out) is defined purely by the springs below.
+		//
+		// a double-tap can land mid-page (#stopSprings froze the track part-way
+		// through its settle). the zoom anchors against a centered slide via
+		// #toCenter, so spring the track home alongside it: this lands the zoom —
+		// and the letterbox around a non-filling image — exactly where it would
+		// have had the page finished first, instead of offset by the leftover
+		// paging distance. a no-op when already at rest.
+		this.#trackX.animateTo(-this.index * this.#viewport.width, 0, SPRING.default);
 		const focal = this.#toCenter(x, y);
 		if (this.#scale.value > this.config.minScale + 0.01) {
 			this.#scale.animateTo(this.config.minScale, 0, SPRING.scale);
