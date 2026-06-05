@@ -74,7 +74,12 @@ type Gesture =
 	| { kind: 'idle' }
 	| { kind: 'page' }
 	| { kind: 'pan'; startPan: Point }
-	| { kind: 'pending'; returningToFit: boolean; startPan: Point }
+	| {
+			kind: 'pending';
+			paging: { target: number; velocity: number } | null;
+			returningToFit: boolean;
+			startPan: Point;
+	  }
 	| ({ kind: 'pinch' } & PinchInfo);
 
 const DOUBLE_TAP_MS = 300;
@@ -271,6 +276,15 @@ export class LightboxEngine {
 			this.#scale.isAnimating &&
 			this.#scale.value > this.config.minScale + 0.001 &&
 			this.#scale.target <= this.config.minScale + 0.01;
+		// likewise capture an in-flight paging settle: a touch landing while the
+		// track is still springing to its target is almost certainly a tap or the
+		// start of another swipe. we don't resume it here — that would let the
+		// track drift during the undecided `pending` phase and fight a swipe that's
+		// about to take over. instead we stash it and, only if the gesture turns
+		// out to be a tap (no commit), resume it on release so the slide finishes.
+		const paging = this.#trackX.isAnimating
+			? { target: this.#trackX.target, velocity: this.#trackX.velocity }
+			: null;
 		this.#stopSprings();
 		const t = this.#now();
 
@@ -292,10 +306,12 @@ export class LightboxEngine {
 			this.#beginPinch();
 		} else if (this.#pointers.size === 1) {
 			const startPan: Point = { x: this.#panX.value, y: this.#panY.value };
-			this.#gesture = { kind: 'pending', returningToFit, startPan };
+			this.#gesture = { kind: 'pending', paging, returningToFit, startPan };
 			if (returningToFit) {
 				// resume the interrupted return-to-fit (scale + recentre) so it settles
-				// underneath whatever the drag commits to (page/dismiss).
+				// underneath whatever the drag commits to (page/dismiss). unlike paging
+				// above, this must run during `pending`: a drag arbitrates against the
+				// shrinking image, so the scale has to keep moving, not freeze.
 				this.#scale.animateTo(this.config.minScale, 0, SPRING.scale);
 				this.#panX.animateTo(0, 0, SPRING.default);
 				this.#panY.animateTo(0, 0, SPRING.default);
@@ -366,7 +382,7 @@ export class LightboxEngine {
 				this.#gesture =
 					this.#scale.value > 1
 						? { kind: 'pan', startPan }
-						: { kind: 'pending', returningToFit: false, startPan };
+						: { kind: 'pending', paging: null, returningToFit: false, startPan };
 				this.#emit();
 				return;
 			}
@@ -510,8 +526,15 @@ export class LightboxEngine {
 				break;
 			}
 			default: {
-				// pending (tap / sub-threshold drag): nothing committed.
-				this.#emit();
+				// pending (tap / sub-threshold drag): nothing committed. if this tap
+				// interrupted a paging settle, resume it from where the touch froze it
+				// so the slide finishes instead of stopping dead under the finger.
+				if (g.kind === 'pending' && g.paging) {
+					this.#trackX.animateTo(g.paging.target, g.paging.velocity, SPRING.default);
+					this.#startLoop();
+				} else {
+					this.#emit();
+				}
 			}
 		}
 	}
