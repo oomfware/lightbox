@@ -25,6 +25,12 @@ export interface LightboxProviderProps {
 	active?: boolean;
 	children?: ReactNode;
 	config?: Partial<LightboxConfig>;
+	/**
+	 * uncontrolled starting index. used to reset on activation; changing it while
+	 * `active` re-resets to the new index, so a consumer can point a fresh open at
+	 * a different image even if the activation edge and the index update land in
+	 * separate commits. ignored when `index` is supplied (that path is controlled).
+	 */
 	defaultIndex?: number;
 	images: LightboxImage[];
 	/** controlled active index. */
@@ -108,17 +114,26 @@ export const Provider = (props: LightboxProviderProps) => {
 		engine.setConfig(mergedConfig);
 	}, [engine, mergedConfig]);
 
-	// reset the engine to the starting index when the surface (re)activates.
-	// `active` undefined → reset once on mount; a false→true edge re-resets.
+	// reset the engine to the starting index when the surface (re)activates, or
+	// when the uncontrolled starting index moves while already active. `active`
+	// undefined → reset once on mount; a false→true edge re-resets. tracking
+	// `defaultIndex` too covers consumers that update the starting index and flip
+	// `active` in separate commits: the activation edge alone would reset to the
+	// stale index. controlled `index` is excluded — the effect below drives it
+	// (animated), so re-resetting on its change would fight that path.
 	const wasActive = useRef(false);
+	const lastDefaultIndex = useRef(defaultIndex);
 	useEffect(() => {
 		const isActive = active ?? true;
-		if (isActive && !wasActive.current) {
+		const activated = isActive && !wasActive.current;
+		const startMoved = isActive && defaultIndex !== lastDefaultIndex.current;
+		if (activated || startMoved) {
 			engine.reset(index ?? defaultIndex);
 		}
 		wasActive.current = isActive;
+		lastDefaultIndex.current = defaultIndex;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [active, engine]);
+	}, [active, defaultIndex, engine]);
 
 	// controlled index → drive the engine.
 	useEffect(() => {
