@@ -74,11 +74,30 @@ export const Viewport = (props: LightboxViewportProps) => {
 	const setRefs = useCallback(
 		(node: HTMLDivElement | null) => {
 			localRef.current = node;
-			if (typeof ref === 'function') {
-				ref(node);
-			} else if (ref) {
-				ref.current = node;
+			// cleanup-aware forward (React 19): always return a cleanup so React
+			// drives detach through it rather than the legacy `setRefs(null)` path.
+			if (typeof ref !== 'function') {
+				if (ref) {
+					ref.current = node;
+				}
+				return () => {
+					localRef.current = null;
+					if (ref) {
+						ref.current = null;
+					}
+				};
 			}
+			// capture the forwarded ref's own cleanup if it returns one; otherwise
+			// fall back to calling it with null on detach.
+			const cleanup = ref(node);
+			return () => {
+				localRef.current = null;
+				if (typeof cleanup === 'function') {
+					cleanup();
+				} else {
+					ref(null);
+				}
+			};
 		},
 		[ref],
 	);
