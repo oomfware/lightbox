@@ -143,6 +143,30 @@ export const Viewport = (props: LightboxViewportProps) => {
 		return () => el.removeEventListener('wheel', onWheel);
 	}, [engine]);
 
+	// `touch-action: none` isn't enough on Chromium: a fast swipe is recognized as
+	// a fling upstream of the touch-action filter (which only drops scroll events,
+	// never tap events). The fling stays live, so the next quick tap fires a
+	// `GestureFlingCancel`, and `TouchscreenTapSuppressionController` swallows that
+	// tap's `GestureTapDown`/`GestureTap` — Blink never synthesizes its click and
+	// the tap is silently lost. Cancelling `touchmove` (non-passive) stops the
+	// browser from ever treating the drag as a scroll/fling, which is the only
+	// thing that reliably prevents the suppression. The engine is pointer-driven,
+	// so suppressing touch events leaves gesture handling untouched; taps don't
+	// move, so they're unaffected.
+	useEffect(() => {
+		const el = localRef.current;
+		if (!el) {
+			return undefined;
+		}
+		const onTouchMove = (e: TouchEvent) => {
+			if (e.cancelable) {
+				e.preventDefault();
+			}
+		};
+		el.addEventListener('touchmove', onTouchMove, { passive: false });
+		return () => el.removeEventListener('touchmove', onTouchMove);
+	}, []);
+
 	const handlePointerDown = useCallback(
 		(e: ReactPointerEvent<HTMLDivElement>) => {
 			onPointerDown?.(e);
