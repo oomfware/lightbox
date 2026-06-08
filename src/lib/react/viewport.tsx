@@ -1,6 +1,7 @@
 import {
 	type ComponentPropsWithoutRef,
 	type KeyboardEvent as ReactKeyboardEvent,
+	type MouseEvent as ReactMouseEvent,
 	type PointerEvent as ReactPointerEvent,
 	type Ref,
 	useCallback,
@@ -47,6 +48,7 @@ const TAP_SLOP = 6;
 export const Viewport = (props: LightboxViewportProps) => {
 	const {
 		children,
+		onContextMenu,
 		onKeyDown,
 		onPointerCancel,
 		onPointerDown,
@@ -202,12 +204,42 @@ export const Viewport = (props: LightboxViewportProps) => {
 		[engine, local, onPointerDown],
 	);
 
+	// settle any gesture whose matching pointerup never reached us — a native
+	// context menu (right-click) swallows it, and the release can also be lost off
+	// window. settling through engine.pointerUp runs the normal page/zoom commit so
+	// the slide returns to a resting position instead of freezing mid-drag.
+	const endStuckGesture = useCallback(
+		(clientX: number, clientY: number) => {
+			const [lx, ly] = local(clientX, clientY);
+			for (const id of pointersDown.current) {
+				try {
+					localRef.current?.releasePointerCapture(id);
+				} catch {
+					/* already released */
+				}
+				engine.pointerUp(id, lx, ly);
+			}
+			pointersDown.current.clear();
+			multiTouch.current = false;
+			down.current = null;
+		},
+		[engine, local],
+	);
+
 	const handlePointerMove = useCallback(
 		(e: ReactPointerEvent<HTMLDivElement>) => {
 			onPointerMove?.(e);
+			// a mouse drag whose button came up without a pointerup reaching us leaves
+			// the gesture stuck live; the first move with no buttons pressed is the cue
+			// to settle it rather than keep dragging. (touch reports buttons === 0
+			// always, so this is mouse-only — long-press menus go through onContextMenu.)
+			if (e.pointerType === 'mouse' && e.buttons === 0 && pointersDown.current.has(e.pointerId)) {
+				endStuckGesture(e.clientX, e.clientY);
+				return;
+			}
 			engine.pointerMove(e.pointerId, ...local(e.clientX, e.clientY));
 		},
-		[engine, local, onPointerMove],
+		[endStuckGesture, engine, local, onPointerMove],
 	);
 
 	const handlePointerUp = useCallback(
@@ -255,6 +287,16 @@ export const Viewport = (props: LightboxViewportProps) => {
 		[engine, local, onPointerCancel],
 	);
 
+	const handleContextMenu = useCallback(
+		(e: ReactMouseEvent<HTMLDivElement>) => {
+			onContextMenu?.(e);
+			// don't preventDefault — let the native menu open; just settle the drag
+			// underneath it now, since its matching pointerup won't arrive.
+			endStuckGesture(e.clientX, e.clientY);
+		},
+		[endStuckGesture, onContextMenu],
+	);
+
 	const handleKeyDown = useCallback(
 		(e: ReactKeyboardEvent<HTMLDivElement>) => {
 			// chain any handler from the wrapping modal (e.g. focus-trap / Escape)
@@ -297,6 +339,7 @@ export const Viewport = (props: LightboxViewportProps) => {
 			onPointerMove={handlePointerMove}
 			onPointerUp={handlePointerUp}
 			onPointerCancel={handlePointerCancel}
+			onContextMenu={handleContextMenu}
 			onKeyDown={handleKeyDown}
 			// merges the caller's `style`, so a fresh object is unavoidable. note:
 			// layout (size/position) is deliberately left to the caller — this part
