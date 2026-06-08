@@ -1,6 +1,6 @@
 {
 	"name": "@oomfware/lightbox",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "headless React image lightbox",
 	"license": "0BSD",
 	"repository": {
