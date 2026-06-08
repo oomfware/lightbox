@@ -109,20 +109,20 @@ export const Viewport = (props: LightboxViewportProps) => {
 		return r ? [clientX - r.left, clientY - r.top] : [clientX, clientY];
 	}, []);
 
-	// measure the viewport.
+	// measure the viewport from the ResizeObserver's fractional contentRect. paging
+	// translates the track by -index * width, so a rounded width (clientWidth) drifts
+	// by its fractional remainder every slide, bleeding a neighbour in by a growing
+	// sliver. contentRect is fractional yet still a layout box, so — like clientWidth,
+	// unlike getBoundingClientRect — the open-animation's scale(0.92) can't corrupt it.
 	useEffect(() => {
 		const el = localRef.current;
 		if (!el) {
 			return undefined;
 		}
-		const measure = () => {
-			// clientWidth/Height are layout dimensions — unlike getBoundingClientRect
-			// they ignore CSS transforms, so the open-animation's scale(0.92) doesn't
-			// corrupt the measured viewport size (which would throw off paging).
-			setViewportSize({ width: el.clientWidth, height: el.clientHeight });
-		};
-		measure();
-		const ro = new ResizeObserver(measure);
+		const ro = new ResizeObserver(([entry]) => {
+			const { height, width } = entry.contentRect;
+			setViewportSize({ height, width });
+		});
 		ro.observe(el);
 		return () => ro.disconnect();
 	}, [setViewportSize]);
