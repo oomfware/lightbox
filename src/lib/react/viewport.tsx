@@ -9,7 +9,7 @@ import {
 	useRef,
 } from 'react';
 
-import { useLightbox, useLightboxState } from './context';
+import { useLightbox, useLightboxState } from './context.ts';
 
 /** a tap (pointerdown→up with no drag) on the viewport. */
 export interface LightboxTapInfo {

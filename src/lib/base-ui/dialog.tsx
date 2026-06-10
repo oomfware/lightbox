@@ -1,11 +1,11 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { type CSSProperties, type ReactNode, useCallback, useRef, useState } from 'react';
 
-import type { LightboxConfig } from '../core/types';
-import { type LightboxImage, useLightboxState } from '../react/context';
-import { Provider } from '../react/provider';
-import { Scrim } from '../react/scrim';
-import { Viewport as GestureViewport, type LightboxViewportProps } from '../react/viewport';
+import type { LightboxConfig } from '../core/types.ts';
+import { type LightboxImage, useLightboxState } from '../react/context.ts';
+import { Provider } from '../react/provider.tsx';
+import { Scrim } from '../react/scrim.tsx';
+import { Viewport as GestureViewport, type LightboxViewportProps } from '../react/viewport.tsx';
 
 export interface LightboxDialogRootProps {
 	children?: ReactNode;
@@ -140,5 +140,5 @@ export const Title = Dialog.Title;
 export const Trigger = Dialog.Trigger;
 
 // primitive parts that work unchanged inside the preset.
-export { Image, Slide, Track } from '../react/track';
-export { Scrim } from '../react/scrim';
+export { Image, Slide, Track } from '../react/track.tsx';
+export { Scrim } from '../react/scrim.tsx';

@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 
-import { useLightboxState } from './context';
+import { useLightboxState } from './context.ts';
 
 export interface LightboxScrimProps {
 	className?: string;

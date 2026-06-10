@@ -13,7 +13,7 @@ import {
 	Track,
 	Trigger,
 	Viewport,
-} from './base-ui/dialog';
+} from './base-ui/dialog.tsx';
 
 /** compound-component namespace bundling the Base UI preset parts. */
 export const LightboxDialog = {
@@ -46,7 +46,7 @@ export {
 	Track,
 	Trigger,
 	Viewport,
-} from './base-ui/dialog';
+} from './base-ui/dialog.tsx';
 
 // shared primitive utilities a preset consumer also needs.
 export {
@@ -54,8 +54,8 @@ export {
 	type LightboxImage,
 	useLightbox,
 	useLightboxState,
-} from './react/context';
-export { type LightboxScrimProps } from './react/scrim';
-export { type LightboxImageProps, type LightboxSlideProps, type LightboxTrackProps } from './react/track';
-export { type LightboxTapInfo, type LightboxViewportProps } from './react/viewport';
-export { type LightboxConfig, type LightboxState } from './core/types';
+} from './react/context.ts';
+export { type LightboxScrimProps } from './react/scrim.tsx';
+export { type LightboxImageProps, type LightboxSlideProps, type LightboxTrackProps } from './react/track.tsx';
+export { type LightboxTapInfo, type LightboxViewportProps } from './react/viewport.tsx';
+export { type LightboxConfig, type LightboxState } from './core/types.ts';

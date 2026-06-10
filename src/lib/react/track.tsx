@@ -1,8 +1,8 @@
 import { type CSSProperties, type ReactNode, type SyntheticEvent, useCallback, useMemo } from 'react';
 
-import { IDENTITY } from '../core/types';
+import { IDENTITY } from '../core/types.ts';
 
-import { type LightboxImage, useLightbox, useLightboxState } from './context';
+import { type LightboxImage, useLightbox, useLightboxState } from './context.ts';
 
 export interface LightboxTrackProps {
 	/**

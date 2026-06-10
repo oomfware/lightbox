@@ -15,7 +15,7 @@
  */
 import { SimpleEventEmitter } from '@mary-ext/simple-event-emitter';
 
-import { SPRING, Spring, clamp, clampRubber, projectDecay, rubberBand } from './physics';
+import { SPRING, Spring, clamp, clampRubber, projectDecay, rubberBand } from './physics.ts';
 import {
 	DEFAULT_CONFIG,
 	type DragMode,
@@ -25,8 +25,8 @@ import {
 	type Point,
 	type Size,
 	type Transform,
-} from './types';
-import { VelocityTracker } from './velocity';
+} from './types.ts';
+import { VelocityTracker } from './velocity.ts';
 
 export interface EngineOptions {
 	/** cancels a frame scheduled by `raf` (defaults to cancelAnimationFrame). */

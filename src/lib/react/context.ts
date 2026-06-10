@@ -1,7 +1,7 @@
 import { createContext, use, useSyncExternalStore } from 'react';
 
-import type { LightboxEngine } from '../core/engine';
-import type { LightboxConfig, LightboxState, Size } from '../core/types';
+import type { LightboxEngine } from '../core/engine.ts';
+import type { LightboxConfig, LightboxState, Size } from '../core/types.ts';
 
 export interface LightboxImage {
 	src: string;

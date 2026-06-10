@@ -9,10 +9,10 @@ import {
 	useSyncExternalStore,
 } from 'react';
 
-import { LightboxEngine } from '../core/engine';
-import { DEFAULT_CONFIG, type LightboxConfig, type Size } from '../core/types';
+import { LightboxEngine } from '../core/engine.ts';
+import { DEFAULT_CONFIG, type LightboxConfig, type Size } from '../core/types.ts';
 
-import { LightboxContext, type LightboxContextValue, type LightboxImage } from './context';
+import { LightboxContext, type LightboxContextValue, type LightboxImage } from './context.ts';
 
 export interface LightboxProviderProps {
 	/**

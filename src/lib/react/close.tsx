@@ -1,6 +1,6 @@
 import { type ButtonHTMLAttributes, type MouseEvent as ReactMouseEvent, useCallback } from 'react';
 
-import { useLightbox } from './context';
+import { useLightbox } from './context.ts';
 
 export type LightboxCloseProps = ButtonHTMLAttributes<HTMLButtonElement>;
 

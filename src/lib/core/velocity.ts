@@ -1,4 +1,4 @@
-import type { Point } from './types';
+import type { Point } from './types.ts';
 
 const WINDOW_MS = 100;
 

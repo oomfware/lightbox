@@ -1,8 +1,8 @@
 // public API for the headless lightbox primitive (dialog-agnostic, no Base UI).
 
-import { Close, type LightboxCloseProps } from './react/close';
-import { type LightboxProviderProps, Provider } from './react/provider';
-import { type LightboxScrimProps, Scrim } from './react/scrim';
+import { Close, type LightboxCloseProps } from './react/close.tsx';
+import { type LightboxProviderProps, Provider } from './react/provider.tsx';
+import { type LightboxScrimProps, Scrim } from './react/scrim.tsx';
 import {
 	Image,
 	type LightboxImageProps,
@@ -10,8 +10,8 @@ import {
 	type LightboxTrackProps,
 	Slide,
 	Track,
-} from './react/track';
-import { type LightboxTapInfo, type LightboxViewportProps, Viewport } from './react/viewport';
+} from './react/track.tsx';
+import { type LightboxTapInfo, type LightboxViewportProps, Viewport } from './react/viewport.tsx';
 
 /** compound-component namespace bundling the primitive parts under one import. */
 export const Lightbox = {
@@ -48,10 +48,10 @@ export {
 	type LightboxImage,
 	useLightbox,
 	useLightboxState,
-} from './react/context';
+} from './react/context.ts';
 
 // core engine + types for fully custom renderers.
-export { type EngineOptions, LightboxEngine } from './core/engine';
+export { type EngineOptions, LightboxEngine } from './core/engine.ts';
 export {
 	DEFAULT_CONFIG,
 	type DragMode,
@@ -61,4 +61,4 @@ export {
 	type Point,
 	type Size,
 	type Transform,
-} from './core/types';
+} from './core/types.ts';
