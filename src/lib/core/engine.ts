@@ -470,9 +470,16 @@ export class LightboxEngine {
 		const s = clamp(raw, this.config.minScale * 0.85, this.config.maxScale * 1.1);
 		// keep the content point originally under the midpoint pinned to the new midpoint.
 		const c = this.#contentPoint(pinch.startMid, pinch.startPan, pinch.startScale);
+		// hard-clamp the pinned pan to its bounds: a translating pinch would
+		// otherwise pin content past the image edge with no resistance, leaving pan
+		// far out of bounds. the moment the pinch drops to a single-finger pan that
+		// overflow gets re-mapped (rubber-band / settle), snapping the image. holding
+		// pan in-bounds during the pinch keeps the hand-off seamless — an in-bounds
+		// value passes through the pan's rubber-band clamp unchanged.
+		const { maxX, maxY } = this.#panBounds(s);
 		this.#scale.set(s);
-		this.#panX.set(newMid.x - c.x * s);
-		this.#panY.set(newMid.y - c.y * s);
+		this.#panX.set(clamp(newMid.x - c.x * s, -maxX, maxX));
+		this.#panY.set(clamp(newMid.y - c.y * s, -maxY, maxY));
 	}
 
 	/**
