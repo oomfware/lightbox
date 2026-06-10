@@ -373,8 +373,13 @@ export class LightboxEngine {
 
 		if (this.#gesture.kind === 'pinch' && this.#pointers.size < 2) {
 			if (this.#pointers.size === 1) {
-				// two → one finger: re-anchor the survivor and continue. still zoomed
-				// → straight to pan; back at (or below) fit → undecided again (pending).
+				// two → one finger: re-anchor the survivor and continue as a pan. a
+				// finger surviving a pinch stays in image-manipulation mode — never
+				// page/dismiss — matching native pinch behavior, where lifting to one
+				// finger keeps the zoom rather than arming a swipe-to-dismiss. (the old
+				// at/below-fit path routed the survivor through `pending`, which re-opened
+				// dismiss arbitration; the surviving finger's lift-off drift could then
+				// commit a swipe-up the user never intended.)
 				const [survivor] = this.#pointers.values();
 				survivor.startX = survivor.x;
 				survivor.startY = survivor.y;
@@ -385,15 +390,12 @@ export class LightboxEngine {
 				// visible on a narrow image, whose constrained axis snaps it back hard).
 				this.#velocity.reset(survivor.x, survivor.y, this.#now());
 				const startPan: Point = { x: this.#panX.value, y: this.#panY.value };
-				if (this.#scale.value > 1) {
-					this.#gesture = { kind: 'pan', startPan };
-				} else {
-					// the surviving finger lifting an at/below-fit pinch (e.g. a pinch-out
-					// overshoot) must settle back to fit, not freeze the shrunk image —
-					// either if it lifts straight away or if it drags on as a page/dismiss.
-					// resume the spring underneath `pending` and flag `returningToFit` so
-					// a continued drag arbitrates as un-zoomed, mirroring pointerDown.
-					this.#gesture = { kind: 'pending', paging: null, returningToFit: true, startPan };
+				this.#gesture = { kind: 'pan', startPan };
+				if (this.#scale.value <= 1) {
+					// a pinch-out overshoot left the image at/below fit. spring scale (and
+					// the pan) back to fit underneath the continuing pan so it doesn't
+					// freeze shrunk; pan bounds collapse to ~0 at fit, so the lingering
+					// finger rubber-bands to nothing and #settleZoom finalizes on release.
 					this.#scale.animateTo(this.config.minScale, 0, SPRING.scale);
 					this.#panX.animateTo(0, 0, SPRING.default);
 					this.#panY.animateTo(0, 0, SPRING.default);
