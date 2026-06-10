@@ -378,6 +378,12 @@ export class LightboxEngine {
 				const [survivor] = this.#pointers.values();
 				survivor.startX = survivor.x;
 				survivor.startY = survivor.y;
+				// the tracker holds interleaved samples from both pinch fingers, so its
+				// velocity is meaningless for the survivor — reseed from the survivor's
+				// position. otherwise that cross-finger noise gets seeded into the pan
+				// settle as a spurious fling, flinging the image off-axis on release (most
+				// visible on a narrow image, whose constrained axis snaps it back hard).
+				this.#velocity.reset(survivor.x, survivor.y, this.#now());
 				const startPan: Point = { x: this.#panX.value, y: this.#panY.value };
 				if (this.#scale.value > 1) {
 					this.#gesture = { kind: 'pan', startPan };
