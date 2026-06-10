@@ -374,15 +374,25 @@ export class LightboxEngine {
 		if (this.#gesture.kind === 'pinch' && this.#pointers.size < 2) {
 			if (this.#pointers.size === 1) {
 				// two → one finger: re-anchor the survivor and continue. still zoomed
-				// → straight to pan; back at fit → undecided again (pending).
+				// → straight to pan; back at (or below) fit → undecided again (pending).
 				const [survivor] = this.#pointers.values();
 				survivor.startX = survivor.x;
 				survivor.startY = survivor.y;
 				const startPan: Point = { x: this.#panX.value, y: this.#panY.value };
-				this.#gesture =
-					this.#scale.value > 1
-						? { kind: 'pan', startPan }
-						: { kind: 'pending', paging: null, returningToFit: false, startPan };
+				if (this.#scale.value > 1) {
+					this.#gesture = { kind: 'pan', startPan };
+				} else {
+					// the surviving finger lifting an at/below-fit pinch (e.g. a pinch-out
+					// overshoot) must settle back to fit, not freeze the shrunk image —
+					// either if it lifts straight away or if it drags on as a page/dismiss.
+					// resume the spring underneath `pending` and flag `returningToFit` so
+					// a continued drag arbitrates as un-zoomed, mirroring pointerDown.
+					this.#gesture = { kind: 'pending', paging: null, returningToFit: true, startPan };
+					this.#scale.animateTo(this.config.minScale, 0, SPRING.scale);
+					this.#panX.animateTo(0, 0, SPRING.default);
+					this.#panY.animateTo(0, 0, SPRING.default);
+					this.#startLoop();
+				}
 				this.#emit();
 				return;
 			}
