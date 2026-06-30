@@ -82,7 +82,7 @@ we use conventional commits with these rules:
 
 ### documentation
 
-"documentation" here means READMEs, code comments, and commit messages.
+"documentation" here means READMEs, code comments, JSDoc, and commit messages.
 
 - write in lowercase, except for proper nouns, acronyms, and 'I'. public-facing interfaces (web UI)
   are exempt
