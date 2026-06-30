@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
 
-import { Lightbox as Inline } from './lib/index.ts';
 import {
 	LightboxDialog as Lightbox,
 	type LightboxImage,
@@ -8,6 +7,7 @@ import {
 	useLightbox,
 	useLightboxState,
 } from './lib/base-ui.ts';
+import { Lightbox as Inline } from './lib/index.ts';
 import './app.css';
 
 // Mixed orientations AND sizes: the big ones exercise zoom/pan + paging; the
