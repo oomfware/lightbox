@@ -659,9 +659,16 @@ export class LightboxEngine {
 
 	// #region geometry helpers
 
-	/** screen point → coordinates relative to the viewport center. */
+	/** screen point → coordinates relative to the rest center (viewport center shifted by `safeAreaInsets`). */
 	#toCenter(x: number, y: number): Point {
-		return { x: x - this.#viewport.width / 2, y: y - this.#viewport.height / 2 };
+		const off = this.#safeOffset();
+		return { x: x - this.#viewport.width / 2 - off.x, y: y - this.#viewport.height / 2 - off.y };
+	}
+
+	/** offset of the safe-area rest center from the viewport center, in px. */
+	#safeOffset(): Point {
+		const { bottom, left, right, top } = this.config.safeAreaInsets;
+		return { x: (left - right) / 2, y: (top - bottom) / 2 };
 	}
 
 	/**
@@ -689,7 +696,12 @@ export class LightboxEngine {
 			// real fitted size once the natural size lands.
 			return { height: 0, width: 0 };
 		}
-		const containK = Math.min(vp.width / nat.width, vp.height / nat.height);
+		// fit the viewport shrunk by safe-area insets, so a rest image clears the
+		// notch/chrome; `minCoverage` upscaling is likewise relative to this rect.
+		const { bottom, left, right, top } = this.config.safeAreaInsets;
+		const usableW = Math.max(0, vp.width - left - right);
+		const usableH = Math.max(0, vp.height - top - bottom);
+		const containK = Math.min(usableW / nat.width, usableH / nat.height);
 		const k =
 			containK <= 1
 				? containK // larger than viewport → downscale to fit
@@ -703,19 +715,25 @@ export class LightboxEngine {
 		this.#snapshot = null;
 	}
 
-	/** pan limits per axis; `overpanInsets` widens each overflowing edge past the edge-flush point so a gap shows. */
+	/**
+	 * pan limits per axis (pan is rest-relative, `0` at rest). overflow is measured
+	 * against the full viewport, so a zoomed image can pan out under `safeAreaInsets`
+	 * (the `off` shift lets its edges reach the physical edges); `overpanInsets`
+	 * widens each overflowing edge past edge-flush.
+	 */
 	#panBounds(scale: number): { maxX: number; maxY: number; minX: number; minY: number } {
 		const fit = this.#fittedSizes[this.index] ?? this.#fittedSize(this.index);
 		const { bottom, left, right, top } = this.config.overpanInsets;
+		const off = this.#safeOffset();
 		// a non-overflowing axis has no edge to reveal (it's already letterboxed, so
 		// a gap is showing); only widen edges the image actually reaches.
 		const overflowX = Math.max(0, (fit.width * scale - this.#viewport.width) / 2);
 		const overflowY = Math.max(0, (fit.height * scale - this.#viewport.height) / 2);
 		return {
-			maxX: overflowX > 0 ? overflowX + left : 0,
-			maxY: overflowY > 0 ? overflowY + top : 0,
-			minX: overflowX > 0 ? -(overflowX + right) : 0,
-			minY: overflowY > 0 ? -(overflowY + bottom) : 0,
+			maxX: overflowX > 0 ? overflowX + left - off.x : 0,
+			maxY: overflowY > 0 ? overflowY + top - off.y : 0,
+			minX: overflowX > 0 ? -(overflowX + right) - off.x : 0,
+			minY: overflowY > 0 ? -(overflowY + bottom) - off.y : 0,
 		};
 	}
 
@@ -817,9 +835,14 @@ export class LightboxEngine {
 	}
 
 	#buildState(): LightboxState {
-		const transforms = this.#transforms.map((t, i) =>
-			i === this.index ? { scale: this.#scale.value, x: this.#panX.value, y: this.#panY.value } : t,
-		);
+		// pan is rest-relative internally; fold the safe-area offset back in here so
+		// the renderer (which centers each <img> in the viewport) lands the safe rect.
+		const off = this.#safeOffset();
+		const transforms = this.#transforms.map((t, i) => {
+			const base =
+				i === this.index ? { scale: this.#scale.value, x: this.#panX.value, y: this.#panY.value } : t;
+			return { scale: base.scale, x: base.x + off.x, y: base.y + off.y };
+		});
 		const pulled = Math.abs(this.#dismissY.value);
 		const backdropOpacity = clamp(1 - pulled / this.config.dismissFadeDistancePx, 0, 1);
 		const g = this.#gesture;
@@ -872,12 +895,19 @@ const cfgPositive = (v: number | undefined, fallback: number): number =>
 // finite, clamped to [lo, hi].
 const cfgRatio = (v: number | undefined, fallback: number, lo: number, hi: number): number =>
 	v !== undefined && Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
-// per-edge spans; a missing object or edge falls back to 0 (edge-flush, no overpan).
-const cfgInsets = (v: Insets | undefined): Insets => ({
-	bottom: cfgSpan(v?.bottom, 0),
-	left: cfgSpan(v?.left, 0),
-	right: cfgSpan(v?.right, 0),
-	top: cfgSpan(v?.top, 0),
+// finite and nonnegative; rejects missing/NaN/negative/Infinity. for spans
+// subtracted from the viewport, where Infinity would collapse the usable rect.
+const cfgFiniteSpan = (v: number | undefined, fallback: number): number =>
+	v !== undefined && Number.isFinite(v) && v >= 0 ? v : fallback;
+// per-edge spans; a missing object or edge falls back to 0.
+const cfgInsets = (
+	v: Insets | undefined,
+	guard: (n: number | undefined, fallback: number) => number,
+): Insets => ({
+	bottom: guard(v?.bottom, 0),
+	left: guard(v?.left, 0),
+	right: guard(v?.right, 0),
+	top: guard(v?.top, 0),
 });
 
 /**
@@ -911,10 +941,11 @@ const normalizeConfig = (config: Partial<LightboxConfig> = {}): LightboxConfig =
 		maxScale,
 		minCoverage: cfgRatio(config.minCoverage, DEFAULT_CONFIG.minCoverage, 0, 1),
 		minScale,
-		overpanInsets: cfgInsets(config.overpanInsets),
+		overpanInsets: cfgInsets(config.overpanInsets, cfgSpan),
 		pageFlingVelocity: cfgSpan(config.pageFlingVelocity, DEFAULT_CONFIG.pageFlingVelocity),
 		pageThresholdRatio: cfgRatio(config.pageThresholdRatio, DEFAULT_CONFIG.pageThresholdRatio, 0, 1),
 		rubberBand: cfgRatio(config.rubberBand, DEFAULT_CONFIG.rubberBand, 0, 1),
+		safeAreaInsets: cfgInsets(config.safeAreaInsets, cfgFiniteSpan),
 	};
 };
 

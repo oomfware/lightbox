@@ -90,6 +90,12 @@ export interface LightboxConfig {
 	pageThresholdRatio: number;
 	/** rubber-band tension for over-drag past bounds/ends (0–1, lower = stiffer). */
 	rubberBand: number;
+	/**
+	 * per-edge region (px) to keep a resting image clear of — a notch, home
+	 * indicator, or fixed toolbar. shrinks the rect the image fits and centers in;
+	 * a zoomed image can still pan out under it. `0` (default) fits the viewport.
+	 */
+	safeAreaInsets: Insets;
 }
 
 /** default {@link LightboxConfig}; spread under caller overrides. */
@@ -108,6 +114,7 @@ export const DEFAULT_CONFIG: LightboxConfig = {
 	pageFlingVelocity: 500,
 	pageThresholdRatio: 0.2,
 	rubberBand: 0.55,
+	safeAreaInsets: NO_INSETS,
 };
 
 /** snapshot the React layer renders from. */
@@ -121,7 +128,8 @@ export interface LightboxState {
 	/**
 	 * per-image rest (scale-1) display size in CSS px, after the `minCoverage`
 	 * fit policy. the renderer sizes each <img> to this so the engine's pan
-	 * bounds and the on-screen pixels agree exactly.
+	 * bounds and the on-screen pixels agree exactly. fits the viewport shrunk by
+	 * `safeAreaInsets`.
 	 */
 	fittedSizes: Size[];
 	/** active image index. */
@@ -136,6 +144,10 @@ export interface LightboxState {
 	isZoomed: boolean;
 	/** paging offset of the track in px (rest = -index * viewportWidth). */
 	trackX: number;
-	/** per-image zoom/pan transforms, indexed like the image list. */
+	/**
+	 * per-image zoom/pan transforms, indexed like the image list. these are final
+	 * render transforms: a rest image carries the `safeAreaInsets` offset, so its
+	 * `x`/`y` are `0` only when no insets are set.
+	 */
 	transforms: Transform[];
 }

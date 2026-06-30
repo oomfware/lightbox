@@ -156,6 +156,7 @@ default — overrides are merged over `DEFAULT_CONFIG`, never retained:
 | `pageFlingVelocity`     | `500`   | release velocity (px/s) that flips a page regardless of distance          |
 | `pageThresholdRatio`    | `0.2`   | fraction of viewport width a page drag must cross to advance              |
 | `rubberBand`            | `0.55`  | rubber-band tension for over-drag past bounds/ends (0–1, lower = stiffer) |
+| `safeAreaInsets`        | all `0` | per-edge region to keep a rest image clear of (notch / chrome; see below) |
 
 #### `minCoverage` — the rest-fit policy
 
@@ -171,17 +172,32 @@ user zoom (double-tap / pinch / wheel) is unaffected by this policy.
 
 #### `overpanInsets` — breathing room past the edges
 
-every other option is a scalar; this one is a per-edge `Insets` object
-(`{ top, right, bottom, left }` in px, defaulting to all `0`). by default a zoomed image stops with
-its edge flush against the viewport edge. a positive inset lets the pan continue that much further,
-so a gap opens between the two — `bottom: 80`, say, to clear a toolbar. it applies per axis only
-where the image overflows the viewport; a letterboxed axis already shows a gap, so it's left
-centered.
+by default a zoomed image stops with its edge flush against the viewport edge. a positive inset lets
+the pan continue that much further, opening a gap between the two — `bottom: 80`, say, to clear a
+toolbar. it applies per axis only where the image overflows; a letterboxed axis already shows a gap,
+so it's left centered.
 
-all four edges are required — spread the exported `NO_INSETS` to fill the ones you don't set:
+`overpanInsets` and `safeAreaInsets` are per-edge `Insets` objects (`{ top, right, bottom, left }`,
+px, default all `0`); spread the exported `NO_INSETS` to fill the edges you don't set:
 
 ```tsx
 <Lightbox.Provider images={images} config={{ overpanInsets: { ...NO_INSETS, bottom: 80 } }}>
+	{/* ... */}
+</Lightbox.Provider>
+```
+
+#### `safeAreaInsets` — clear of notches and chrome
+
+shrinks the rect a resting image fits and centers within, so the image sits clear of a notch, home
+indicator, or fixed toolbar. it only moves the resting fit, so an asymmetric inset rests the image
+off-center — `top: 47, bottom: 34` sits it between the two — while a zoomed image can still pan out
+under the inset. feed it from CSS `env(safe-area-inset-*)`:
+
+```tsx
+<Lightbox.Provider
+	images={images}
+	config={{ safeAreaInsets: { ...NO_INSETS, top: 47, bottom: 34 } }}
+>
 	{/* ... */}
 </Lightbox.Provider>
 ```
