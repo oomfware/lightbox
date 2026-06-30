@@ -152,6 +152,7 @@ default — overrides are merged over `DEFAULT_CONFIG`, never retained:
 | `maxScale`              | `4`     | max zoom relative to fitted size                                          |
 | `minCoverage`           | `0.5`   | rest-fit policy for images smaller than the viewport (see below)          |
 | `minScale`              | `1`     | min zoom before snap-back to 1                                            |
+| `overpanInsets`         | all `0` | per-edge gap a zoomed image can be panned past the viewport (see below)   |
 | `pageFlingVelocity`     | `500`   | release velocity (px/s) that flips a page regardless of distance          |
 | `pageThresholdRatio`    | `0.2`   | fraction of viewport width a page drag must cross to advance              |
 | `rubberBand`            | `0.55`  | rubber-band tension for over-drag past bounds/ends (0–1, lower = stiffer) |
@@ -167,6 +168,23 @@ resting image must cover:
 - `0.5` → natural size, but bump genuinely tiny images up to 50% coverage
 
 user zoom (double-tap / pinch / wheel) is unaffected by this policy.
+
+#### `overpanInsets` — breathing room past the edges
+
+every other option is a scalar; this one is a per-edge `Insets` object
+(`{ top, right, bottom, left }` in px, defaulting to all `0`). by default a zoomed image stops with
+its edge flush against the viewport edge. a positive inset lets the pan continue that much further,
+so a gap opens between the two — `bottom: 80`, say, to clear a toolbar. it applies per axis only
+where the image overflows the viewport; a letterboxed axis already shows a gap, so it's left
+centered.
+
+all four edges are required — spread the exported `NO_INSETS` to fill the ones you don't set:
+
+```tsx
+<Lightbox.Provider images={images} config={{ overpanInsets: { ...NO_INSETS, bottom: 80 } }}>
+	{/* ... */}
+</Lightbox.Provider>
+```
 
 ### custom slides and chrome
 

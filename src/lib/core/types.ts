@@ -13,6 +13,17 @@ export interface Size {
 	width: number;
 }
 
+/** per-edge offsets in CSS px, laid out like CSS `inset`. */
+export interface Insets {
+	bottom: number;
+	left: number;
+	right: number;
+	top: number;
+}
+
+/** all-zero {@link Insets}. */
+export const NO_INSETS: Insets = { bottom: 0, left: 0, right: 0, top: 0 };
+
 /**
  * the per-image transform. `scale` is relative to the fitted (contain) size,
  * so `scale: 1` means "fit to viewport". `x`/`y` are translation in CSS px
@@ -67,6 +78,12 @@ export interface LightboxConfig {
 	minCoverage: number;
 	/** min zoom before snap-back to 1. */
 	minScale: number;
+	/**
+	 * extra pan travel (px) past where a zoomed image's edge meets the viewport
+	 * edge, per edge — how far that edge can be pulled inward, opening a gap. `0`
+	 * (default) keeps the edge flush.
+	 */
+	overpanInsets: Insets;
 	/** release velocity (px/s) that flips a page regardless of distance. */
 	pageFlingVelocity: number;
 	/** fraction of viewport width a page drag must cross to advance. */
@@ -87,6 +104,7 @@ export const DEFAULT_CONFIG: LightboxConfig = {
 	maxScale: 4,
 	minCoverage: 0.5,
 	minScale: 1,
+	overpanInsets: NO_INSETS,
 	pageFlingVelocity: 500,
 	pageThresholdRatio: 0.2,
 	rubberBand: 0.55,

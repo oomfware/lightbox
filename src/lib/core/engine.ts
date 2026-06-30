@@ -20,6 +20,7 @@ import {
 	DEFAULT_CONFIG,
 	type DragMode,
 	IDENTITY,
+	type Insets,
 	type LightboxConfig,
 	type LightboxState,
 	type Point,
@@ -476,10 +477,10 @@ export class LightboxEngine {
 		// overflow gets re-mapped (rubber-band / settle), snapping the image. holding
 		// pan in-bounds during the pinch keeps the hand-off seamless — an in-bounds
 		// value passes through the pan's rubber-band clamp unchanged.
-		const { maxX, maxY } = this.#panBounds(s);
+		const { maxX, maxY, minX, minY } = this.#panBounds(s);
 		this.#scale.set(s);
-		this.#panX.set(clamp(newMid.x - c.x * s, -maxX, maxX));
-		this.#panY.set(clamp(newMid.y - c.y * s, -maxY, maxY));
+		this.#panX.set(clamp(newMid.x - c.x * s, minX, maxX));
+		this.#panY.set(clamp(newMid.y - c.y * s, minY, maxY));
 	}
 
 	/**
@@ -507,12 +508,12 @@ export class LightboxEngine {
 
 		switch (g.kind) {
 			case 'pan': {
-				const { maxX, maxY } = this.#panBounds(this.#scale.value);
+				const { maxX, maxY, minX, minY } = this.#panBounds(this.#scale.value);
 				this.#panX.set(
-					clampRubber(g.startPan.x + dx, -maxX, maxX, this.#viewport.width, this.config.rubberBand),
+					clampRubber(g.startPan.x + dx, minX, maxX, this.#viewport.width, this.config.rubberBand),
 				);
 				this.#panY.set(
-					clampRubber(g.startPan.y + dy, -maxY, maxY, this.#viewport.height, this.config.rubberBand),
+					clampRubber(g.startPan.y + dy, minY, maxY, this.#viewport.height, this.config.rubberBand),
 				);
 				break;
 			}
@@ -610,11 +611,11 @@ export class LightboxEngine {
 		} else {
 			const targetScale = clamp(this.#scale.value, minScale, this.config.maxScale);
 			this.#scale.animateTo(targetScale, 0, SPRING.scale);
-			const { maxX, maxY } = this.#panBounds(targetScale);
+			const { maxX, maxY, minX, minY } = this.#panBounds(targetScale);
 			const projX = this.#panX.value + projectDecay(v.x);
 			const projY = this.#panY.value + projectDecay(v.y);
-			this.#panX.animateTo(clamp(projX, -maxX, maxX), v.x, SPRING.default);
-			this.#panY.animateTo(clamp(projY, -maxY, maxY), v.y, SPRING.default);
+			this.#panX.animateTo(clamp(projX, minX, maxX), v.x, SPRING.default);
+			this.#panY.animateTo(clamp(projY, minY, maxY), v.y, SPRING.default);
 		}
 		this.#startLoop();
 	}
@@ -638,10 +639,10 @@ export class LightboxEngine {
 		} else {
 			const s = this.config.doubleTapScale;
 			const c = this.#contentPoint(focal, { x: this.#panX.value, y: this.#panY.value }, this.#scale.value);
-			const { maxX, maxY } = this.#panBounds(s);
+			const { maxX, maxY, minX, minY } = this.#panBounds(s);
 			this.#scale.animateTo(s, 0, SPRING.scale);
-			this.#panX.animateTo(clamp(focal.x - c.x * s, -maxX, maxX), 0, SPRING.default);
-			this.#panY.animateTo(clamp(focal.y - c.y * s, -maxY, maxY), 0, SPRING.default);
+			this.#panX.animateTo(clamp(focal.x - c.x * s, minX, maxX), 0, SPRING.default);
+			this.#panY.animateTo(clamp(focal.y - c.y * s, minY, maxY), 0, SPRING.default);
 		}
 		this.#startLoop();
 	}
@@ -702,18 +703,26 @@ export class LightboxEngine {
 		this.#snapshot = null;
 	}
 
-	#panBounds(scale: number): { maxX: number; maxY: number } {
+	/** pan limits per axis; `overpanInsets` widens each overflowing edge past the edge-flush point so a gap shows. */
+	#panBounds(scale: number): { maxX: number; maxY: number; minX: number; minY: number } {
 		const fit = this.#fittedSizes[this.index] ?? this.#fittedSize(this.index);
+		const { bottom, left, right, top } = this.config.overpanInsets;
+		// a non-overflowing axis has no edge to reveal (it's already letterboxed, so
+		// a gap is showing); only widen edges the image actually reaches.
+		const overflowX = Math.max(0, (fit.width * scale - this.#viewport.width) / 2);
+		const overflowY = Math.max(0, (fit.height * scale - this.#viewport.height) / 2);
 		return {
-			maxX: Math.max(0, (fit.width * scale - this.#viewport.width) / 2),
-			maxY: Math.max(0, (fit.height * scale - this.#viewport.height) / 2),
+			maxX: overflowX > 0 ? overflowX + left : 0,
+			maxY: overflowY > 0 ? overflowY + top : 0,
+			minX: overflowX > 0 ? -(overflowX + right) : 0,
+			minY: overflowY > 0 ? -(overflowY + bottom) : 0,
 		};
 	}
 
 	#clampActivePanInstant(): void {
-		const { maxX, maxY } = this.#panBounds(this.#scale.value);
-		this.#panX.set(clamp(this.#panX.value, -maxX, maxX));
-		this.#panY.set(clamp(this.#panY.value, -maxY, maxY));
+		const { maxX, maxY, minX, minY } = this.#panBounds(this.#scale.value);
+		this.#panX.set(clamp(this.#panX.value, minX, maxX));
+		this.#panY.set(clamp(this.#panY.value, minY, maxY));
 	}
 
 	#resetTransform(i: number): void {
@@ -863,6 +872,13 @@ const cfgPositive = (v: number | undefined, fallback: number): number =>
 // finite, clamped to [lo, hi].
 const cfgRatio = (v: number | undefined, fallback: number, lo: number, hi: number): number =>
 	v !== undefined && Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
+// per-edge spans; a missing object or edge falls back to 0 (edge-flush, no overpan).
+const cfgInsets = (v: Insets | undefined): Insets => ({
+	bottom: cfgSpan(v?.bottom, 0),
+	left: cfgSpan(v?.left, 0),
+	right: cfgSpan(v?.right, 0),
+	top: cfgSpan(v?.top, 0),
+});
 
 /**
  * the sole config defaulting + validation boundary: missing or out-of-range
@@ -895,6 +911,7 @@ const normalizeConfig = (config: Partial<LightboxConfig> = {}): LightboxConfig =
 		maxScale,
 		minCoverage: cfgRatio(config.minCoverage, DEFAULT_CONFIG.minCoverage, 0, 1),
 		minScale,
+		overpanInsets: cfgInsets(config.overpanInsets),
 		pageFlingVelocity: cfgSpan(config.pageFlingVelocity, DEFAULT_CONFIG.pageFlingVelocity),
 		pageThresholdRatio: cfgRatio(config.pageThresholdRatio, DEFAULT_CONFIG.pageThresholdRatio, 0, 1),
 		rubberBand: cfgRatio(config.rubberBand, DEFAULT_CONFIG.rubberBand, 0, 1),
