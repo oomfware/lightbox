@@ -11,6 +11,7 @@
 		"dist/"
 	],
 	"type": "module",
+	"sideEffects": false,
 	"exports": {
 		".": "./dist/index.mjs",
 		"./base-ui": "./dist/base-ui.mjs",
