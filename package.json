@@ -8,11 +8,7 @@
 		"url": "https://codeberg.org/oomfware/lightbox"
 	},
 	"files": [
-		"dist/",
-		"src/lib/",
-		"!src/lib/**/*.bench.ts",
-		"!src/lib/**/*.test.ts",
-		"!src/lib/**/*.test.tsx"
+		"dist/"
 	],
 	"type": "module",
 	"exports": {
