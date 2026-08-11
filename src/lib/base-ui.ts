@@ -1,5 +1,3 @@
-// public API for the Base UI Dialog preset (accessible, batteries-included).
-
 import {
 	Backdrop,
 	Close,
@@ -15,7 +13,6 @@ import {
 	Viewport,
 } from './base-ui/dialog.tsx';
 
-/** compound-component namespace bundling the Base UI preset parts. */
 export const LightboxDialog = {
 	Backdrop,
 	Close,
@@ -48,7 +45,6 @@ export {
 	Viewport,
 } from './base-ui/dialog.tsx';
 
-// shared primitive utilities a preset consumer also needs.
 export {
 	type LightboxContextValue,
 	type LightboxImage,

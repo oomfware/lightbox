@@ -22,9 +22,8 @@
   error messages)
 - add trailing commas
 - order list-like constructs (arrays, object keys, union/intersection members, enum variants,
-  imports, etc.) alphabetically. reserve other orderings for cases where order carries meaning —
-  semantic precedence, an external spec, or similar. if you encounter an unordered list while
-  editing nearby code, reorder it as part of the change; avoid drive-by reorders of unrelated lists
+  imports, etc.) by whatever meaning the list carries — a discriminant leads the object it tags, an
+  external spec or call signature keeps its own sequence — and alphabetically when nothing does.
 
 #### control flow and structure
 

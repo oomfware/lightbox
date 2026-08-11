@@ -1,5 +1,3 @@
-// public API for the headless lightbox primitive (dialog-agnostic, no Base UI).
-
 import { Close, type LightboxCloseProps } from './react/close.tsx';
 import { type LightboxProviderProps, Provider } from './react/provider.tsx';
 import { type LightboxScrimProps, Scrim } from './react/scrim.tsx';
@@ -13,7 +11,6 @@ import {
 } from './react/track.tsx';
 import { type LightboxTapInfo, type LightboxViewportProps, Viewport } from './react/viewport.tsx';
 
-/** compound-component namespace bundling the primitive parts under one import. */
 export const Lightbox = {
 	Close,
 	Image,
@@ -42,7 +39,6 @@ export {
 	Viewport,
 };
 
-// hook + context types for advanced/headless usage.
 export {
 	type LightboxContextValue,
 	type LightboxImage,
@@ -50,7 +46,6 @@ export {
 	useLightboxState,
 } from './react/context.ts';
 
-// core engine + types for fully custom renderers.
 export { type EngineOptions, LightboxEngine } from './core/engine.ts';
 export {
 	DEFAULT_CONFIG,
