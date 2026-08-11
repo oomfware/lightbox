@@ -1,7 +1,4 @@
-/**
- * core geometry + transform types for the headless lightbox.
- * framework-agnostic — no React, no DOM beyond plain numbers.
- */
+// #region geometry
 
 export interface Point {
 	x: number;
@@ -9,26 +6,22 @@ export interface Point {
 }
 
 export interface Size {
-	height: number;
 	width: number;
+	height: number;
 }
 
 /** per-edge offsets in CSS px, laid out like CSS `inset`. */
 export interface Insets {
+	top: number;
+	right: number;
 	bottom: number;
 	left: number;
-	right: number;
-	top: number;
 }
 
 /** all-zero {@link Insets}. */
-export const NO_INSETS: Insets = { bottom: 0, left: 0, right: 0, top: 0 };
+export const NO_INSETS: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
 
-/**
- * the per-image transform. `scale` is relative to the fitted (contain) size,
- * so `scale: 1` means "fit to viewport". `x`/`y` are translation in CSS px
- * applied *after* scaling, measured from the centered rest position.
- */
+/** an image transform relative to its fitted, centered position. */
 export interface Transform {
 	scale: number;
 	x: number;
@@ -41,113 +34,95 @@ export const IDENTITY: Transform = { scale: 1, x: 0, y: 0 };
 /** which gesture a single-pointer drag has committed to (axis lock). */
 export type DragMode = 'none' | 'pan' | 'page' | 'dismiss';
 
+// #endregion
+
+// #region configuration
+
 /** tunable behavior; defaults live in `DEFAULT_CONFIG`. */
 export interface LightboxConfig {
 	/** horizontal travel (px) at which a not-zoomed drag locks to an axis. */
 	axisLockPx: number;
-	/**
-	 * close when a mouse click lands on the backdrop area (anywhere that isn't
-	 * the image or a control) without dragging. mouse/pen only — touch taps are
-	 * left for the app to handle (e.g. toggling chrome). see `Viewport`'s
-	 * `onTap`.
-	 */
-	closeOnBackdropClick: boolean;
-	/** distance (px) over which the backdrop fully fades during a dismiss pull. */
-	dismissFadeDistancePx: number;
+	/** fraction of viewport width a page drag must cross to advance. */
+	pageThresholdRatio: number;
+	/** release velocity (px/s) that flips a page regardless of distance. */
+	pageFlingVelocity: number;
+	/** whether the carousel wraps from last → first and back. */
+	loop: boolean;
+
 	/** vertical travel (px) past which release dismisses. */
 	dismissThresholdPx: number;
 	/** release velocity (px/s) that dismisses regardless of distance. */
 	dismissVelocity: number;
-	/** scale applied by a double-tap / double-click toggle. */
-	doubleTapScale: number;
-	/** whether the carousel wraps from last → first and back. */
-	loop: boolean;
-	/** max zoom relative to fitted size. */
-	maxScale: number;
-	/**
-	 * rest-fit policy for images smaller than the viewport — the minimum
-	 * fraction of the viewport's binding dimension a rest image must cover:
-	 *
-	 *   - `1`   → always fit-to-viewport (force-upscale small images; "contain")
-	 *   - `0`   → never upscale (small images shown at natural 1:1 size)
-	 *   - `0.5` → natural size, but bump genuinely tiny images up to 50% coverage
-	 *
-	 * images larger than the viewport are always downscaled to fit, regardless.
-	 * (user zoom — double-tap / pinch / wheel — is unaffected by this.)
-	 */
-	minCoverage: number;
+	/** distance (px) over which the backdrop fully fades during a dismiss pull. */
+	dismissFadeDistancePx: number;
+	/** whether a mouse or pen tap outside the image closes the lightbox. */
+	closeOnBackdropClick: boolean;
+
 	/** min zoom before snap-back to 1. */
 	minScale: number;
-	/**
-	 * extra pan travel (px) past where a zoomed image's edge meets the viewport
-	 * edge, per edge — how far that edge can be pulled inward, opening a gap. `0`
-	 * (default) keeps the edge flush.
-	 */
-	overpanInsets: Insets;
-	/** release velocity (px/s) that flips a page regardless of distance. */
-	pageFlingVelocity: number;
-	/** fraction of viewport width a page drag must cross to advance. */
-	pageThresholdRatio: number;
+	/** max zoom relative to fitted size. */
+	maxScale: number;
+	/** scale applied by a double-tap / double-click toggle. */
+	doubleTapScale: number;
+	/** minimum viewport coverage for a resting small image: `0` preserves natural size and `1` fills. */
+	minCoverage: number;
 	/** rubber-band tension for over-drag past bounds/ends (0–1, lower = stiffer). */
 	rubberBand: number;
-	/**
-	 * per-edge region (px) to keep a resting image clear of — a notch, home
-	 * indicator, or fixed toolbar. shrinks the rect the image fits and centers in;
-	 * a zoomed image can still pan out under it. `0` (default) fits the viewport.
-	 */
+	/** per-edge pan travel in px beyond the viewport. */
+	overpanInsets: Insets;
+	/** per-edge region in px that a resting image must avoid. */
 	safeAreaInsets: Insets;
 }
 
 /** default {@link LightboxConfig}; spread under caller overrides. */
 export const DEFAULT_CONFIG: LightboxConfig = {
 	axisLockPx: 10,
-	closeOnBackdropClick: true,
-	dismissFadeDistancePx: 400,
+	pageThresholdRatio: 0.2,
+	pageFlingVelocity: 500,
+	loop: false,
 	dismissThresholdPx: 50,
 	dismissVelocity: 700,
-	doubleTapScale: 2.5,
-	loop: false,
-	maxScale: 4,
-	minCoverage: 0.5,
+	dismissFadeDistancePx: 400,
+	closeOnBackdropClick: true,
 	minScale: 1,
-	overpanInsets: NO_INSETS,
-	pageFlingVelocity: 500,
-	pageThresholdRatio: 0.2,
+	maxScale: 4,
+	doubleTapScale: 2.5,
+	minCoverage: 0.5,
 	rubberBand: 0.55,
+	overpanInsets: NO_INSETS,
 	safeAreaInsets: NO_INSETS,
 };
 
+// #endregion
+
+// #region state
+
 /** snapshot the React layer renders from. */
 export interface LightboxState {
-	/** 1 at rest, → 0 as the dismiss pull approaches the fade distance. */
-	backdropOpacity: number;
-	/** vertical dismiss pull of the active slide in px. */
-	dismissY: number;
-	/** committed axis for the active single-pointer drag. */
-	dragMode: DragMode;
-	/**
-	 * per-image rest (scale-1) display size in CSS px, after the `minCoverage`
-	 * fit policy. the renderer sizes each <img> to this so the engine's pan
-	 * bounds and the on-screen pixels agree exactly. fits the viewport shrunk by
-	 * `safeAreaInsets`.
-	 */
-	fittedSizes: Size[];
 	/** active image index. */
 	index: number;
-	/** a spring/decay animation is settling. */
-	isAnimating: boolean;
+	/** final per-image transforms, including safe-area offsets. */
+	transforms: Transform[];
+	/** fitted image sizes in CSS px after coverage and safe-area rules. */
+	fittedSizes: Size[];
+
+	/** paging offset of the track in px (rest = -index * viewportWidth). */
+	trackX: number;
+	/** vertical dismiss pull of the active slide in px. */
+	dismissY: number;
+	/** 1 at rest, → 0 as the dismiss pull approaches the fade distance. */
+	backdropOpacity: number;
+
+	/** committed axis for the active single-pointer drag. */
+	dragMode: DragMode;
 	/** a single-pointer or pinch gesture is actively in progress. */
 	isDragging: boolean;
 	/** a two-pointer pinch is in progress. */
 	isPinching: boolean;
-	/** convenience: active image is zoomed beyond fit. */
+	/** whether the active image is zoomed beyond fit. */
 	isZoomed: boolean;
-	/** paging offset of the track in px (rest = -index * viewportWidth). */
-	trackX: number;
-	/**
-	 * per-image zoom/pan transforms, indexed like the image list. these are final
-	 * render transforms: a rest image carries the `safeAreaInsets` offset, so its
-	 * `x`/`y` are `0` only when no insets are set.
-	 */
-	transforms: Transform[];
+	/** a spring/decay animation is settling. */
+	isAnimating: boolean;
 }
+
+// #endregion

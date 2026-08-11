@@ -10,9 +10,8 @@ import {
 import { Lightbox as Inline } from './lib/index.ts';
 import './app.css';
 
-// Mixed orientations AND sizes: the big ones exercise zoom/pan + paging; the
-// small/tiny ones demonstrate the rest-fit policy (we don't force-upscale a
-// small image, but a genuinely tiny one still gets bumped up to stay visible).
+// #region data
+
 const IMAGES: LightboxImage[] = [
 	{ src: 'https://picsum.photos/id/1015/1200/1600', alt: 'River between cliffs', width: 1200, height: 1600 },
 	{ src: 'https://picsum.photos/id/1025/1600/1067', alt: 'Pug in a blanket', width: 1600, height: 1067 },
@@ -23,15 +22,17 @@ const IMAGES: LightboxImage[] = [
 
 const thumb = (src: string) => src.replace(/\/\d+\/\d+$/, '/400/400');
 
-// Three fit policies, mapped to the engine's `minCoverage` config.
 const FIT_MODES = [
 	{ key: 'natural', label: 'Natural (0)', minCoverage: 0, hint: 'small images shown 1:1' },
 	{ key: 'smart', label: 'Smart (0.5)', minCoverage: 0.5, hint: 'tiny images bumped to 50%' },
 	{ key: 'fill', label: 'Fill (1)', minCoverage: 1, hint: 'always fit to viewport' },
 ] as const;
 
-/** Counter + prev/next arrows (chrome that reads lightbox state). */
-function Controls({ chromeCls }: { chromeCls: string }) {
+// #endregion
+
+// #region components
+
+const Controls = ({ chromeCls }: { chromeCls: string }) => {
 	const { images, next, prev } = useLightbox();
 	const index = useLightboxState((s) => s.index);
 	return (
@@ -51,10 +52,9 @@ function Controls({ chromeCls }: { chromeCls: string }) {
 			)}
 		</>
 	);
-}
+};
 
-/** Caption that reports what the fit policy did to this image. */
-function Caption({ index, image, chromeCls }: { index: number; image: LightboxImage; chromeCls: string }) {
+const Caption = ({ image, index, chromeCls }: { image: LightboxImage; index: number; chromeCls: string }) => {
 	const fit = useLightboxState((s) => s.fittedSizes[index]);
 	const nat = image.width;
 	let note = '';
@@ -73,36 +73,28 @@ function Caption({ index, image, chromeCls }: { index: number; image: LightboxIm
 			{image.width}×{image.height} — {note}
 		</figcaption>
 	);
-}
+};
 
-/** Prev/next + counter for the inline demo, reading the same hook as any chrome. */
-function InlineControls() {
+const InlineControls = () => {
 	const { images, next, prev } = useLightbox();
 	const index = useLightboxState((s) => s.index);
 	return (
 		<div className="inline-controls">
-			<button onClick={prev} disabled={index === 0} aria-label="Previous image">
+			<button disabled={index === 0} aria-label="Previous image" onClick={prev}>
 				‹
 			</button>
 			<span>
 				{index + 1} / {images.length}
 			</span>
-			<button onClick={next} disabled={index === images.length - 1} aria-label="Next image">
+			<button disabled={index === images.length - 1} aria-label="Next image" onClick={next}>
 				›
 			</button>
 		</div>
 	);
-}
+};
 
-/**
- * The same engine + gesture parts, mounted *inline* with no dialog at all —
- * `Lightbox.Provider` + `Lightbox.Viewport` straight in the page. Proof the
- * primitive is dialog-agnostic: there's no modal, portal, focus trap, or
- * backdrop here. (Swipe-to-dismiss is disabled — nothing to dismiss to inline.)
- */
-function InlineDemo() {
+const InlineDemo = () => {
 	const [index, setIndex] = useState(0);
-	// stable config object so the engine only re-applies it once.
 	const config = useMemo(
 		() => ({ closeOnBackdropClick: false, dismissThresholdPx: Infinity, dismissVelocity: Infinity }),
 		[],
@@ -115,7 +107,7 @@ function InlineDemo() {
 				<code>@oomfware/lightbox</code> (no Base UI). Drag to page, double-click / ctrl-scroll to zoom, drag
 				to pan, or use the arrows.
 			</p>
-			<Inline.Provider images={IMAGES} index={index} onIndexChange={setIndex} config={config}>
+			<Inline.Provider images={IMAGES} config={config} index={index} onIndexChange={setIndex}>
 				<div className="inline-stage">
 					<Inline.Viewport className="inline-viewport">
 						<Inline.Track />
@@ -125,15 +117,18 @@ function InlineDemo() {
 			</Inline.Provider>
 		</section>
 	);
-}
+};
 
-export default function App() {
+// #endregion
+
+// #region app
+
+const App = () => {
 	const [open, setOpen] = useState(false);
 	const [index, setIndex] = useState(0);
 	const [minCoverage, setMinCoverage] = useState(0.5);
 	const [chromeHidden, setChromeHidden] = useState(false);
 
-	// Memoize so the engine only re-applies config when the policy actually changes.
 	const config = useMemo(() => ({ minCoverage }), [minCoverage]);
 
 	const openAt = (i: number) => {
@@ -142,13 +137,11 @@ export default function App() {
 		setOpen(true);
 	};
 
-	// Tap-to-toggle-chrome built on the Viewport's onTap hook. We debounce so the
-	// first tap of a double-tap-to-zoom doesn't also flip the chrome.
+	// delay single taps so double-tap zoom does not toggle the chrome.
 	const tapTimer = useRef<number | null>(null);
 	const lastTap = useRef(0);
 	const handleTap = (t: LightboxTapInfo) => {
-		// Mouse/pen clicks on the backdrop already close (closeOnBackdropClick);
-		// only toggle on touch taps, or on taps that land on the image.
+		// mouse and pen backdrop taps close instead.
 		if (t.pointerType !== 'touch' && !t.onImage) {
 			return;
 		}
@@ -159,7 +152,7 @@ export default function App() {
 			}
 			tapTimer.current = null;
 			lastTap.current = 0;
-			return; // second tap → let the engine zoom
+			return;
 		}
 		lastTap.current = now;
 		tapTimer.current = window.setTimeout(() => {
@@ -199,11 +192,11 @@ export default function App() {
 
 			<Lightbox.Root
 				images={IMAGES}
-				open={open}
-				onOpenChange={setOpen}
-				index={index}
-				onIndexChange={setIndex}
 				config={config}
+				index={index}
+				open={open}
+				onIndexChange={setIndex}
+				onOpenChange={setOpen}
 			>
 				<Lightbox.Portal>
 					<Lightbox.Backdrop className="lb-backdrop" />
@@ -224,7 +217,7 @@ export default function App() {
 						</div>
 						<Lightbox.Track>
 							{(image, i) => (
-								<Lightbox.Slide key={i} index={i}>
+								<Lightbox.Slide key={image.src} index={i}>
 									<Lightbox.Image index={i} />
 									<Caption index={i} image={image} chromeCls={chromeCls} />
 								</Lightbox.Slide>
@@ -239,4 +232,8 @@ export default function App() {
 			</Lightbox.Root>
 		</main>
 	);
-}
+};
+
+// #endregion
+
+export default App;

@@ -8,20 +8,10 @@ export interface LightboxScrimProps {
 }
 
 /**
- * the engine-driven dimming layer: carries the live swipe-to-dismiss fade
- * (`state.backdropOpacity`). it is *only* the gesture-coupled layer — it does
- * not provide the open/close transition. nest it inside whatever backdrop your
- * modal renders so the two opacities multiply rather than fight:
+ * renders the gesture-driven backdrop fade.
  *
- * ```tsx
- * <Dialog.Backdrop>     // open/close fade, the modal's concern
- *   <Lightbox.Scrim />  // gesture fade, ours
- * </Dialog.Backdrop>
- * ```
- *
- * fills its positioned parent; recolor via the `--lightbox-backdrop` CSS var.
- *
- * @param props see {@link LightboxScrimProps}.
+ * @param props scrim properties.
+ * @returns the scrim.
  */
 export const Scrim = ({ className, style }: LightboxScrimProps) => {
 	const opacity = useLightboxState((state) => state.backdropOpacity);
@@ -30,7 +20,7 @@ export const Scrim = ({ className, style }: LightboxScrimProps) => {
 		<div
 			className={className}
 			data-zoomed={zoomed ? '' : undefined}
-			// carries the engine's live dismiss opacity; new every frame by design
+			// opacity changes every animation frame.
 			// oxlint-disable-next-line react-perf/jsx-no-new-object-as-prop
 			style={{
 				position: 'absolute',

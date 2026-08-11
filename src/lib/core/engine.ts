@@ -1,21 +1,6 @@
-/**
- * LightboxEngine — the framework-agnostic gesture state machine.
- *
- * models three independent transform layers:
- *   - track  : horizontal paging (translateX of the whole carousel)
- *   - dismiss: vertical swipe-to-dismiss of the active slide
- *   - image  : per-image pinch-zoom + pan (innermost transform)
- *
- * arbitration: at scale 1 a drag axis-locks to paging
- * (horizontal) or dismiss (vertical) once it crosses `axisLockPx`; while zoomed
- * a drag pans the image and rubber-bands at its edges instead of paging.
- *
- * it owns its own rAF settle loop (injectable for tests/SSR) and emits an
- * immutable-ish snapshot via `subscribe`. no DOM, no React.
- */
 import { SimpleEventEmitter } from '@mary-ext/simple-event-emitter';
 
-import { SPRING, Spring, clamp, clampRubber, projectDecay, rubberBand } from './physics.ts';
+import { SPRING, Spring, clamp, clampRubber, projectDecay } from './physics.ts';
 import {
 	DEFAULT_CONFIG,
 	type DragMode,
@@ -29,19 +14,21 @@ import {
 } from './types.ts';
 import { VelocityTracker } from './velocity.ts';
 
+/** options for {@link LightboxEngine}. */
 export interface EngineOptions {
-	/** cancels a frame scheduled by `raf` (defaults to cancelAnimationFrame). */
-	caf?: (handle: number) => void;
-	/** behavior overrides merged over {@link DEFAULT_CONFIG}. */
-	config?: Partial<LightboxConfig>;
 	/** initial active image index (defaults to 0). */
 	index?: number;
-	/** injectable clock (defaults to performance.now). */
-	now?: () => number;
+	/** behavior overrides merged over {@link DEFAULT_CONFIG}. */
+	config?: Partial<LightboxConfig>;
 	/** called when a dismiss gesture commits. */
 	onDismiss?: () => void;
+
+	/** injectable clock (defaults to performance.now). */
+	now?: () => number;
 	/** schedules a frame and returns a handle (defaults to requestAnimationFrame). */
 	raf?: (cb: (t: number) => void) => number;
+	/** cancels a frame scheduled by `raf` (defaults to cancelAnimationFrame). */
+	caf?: (handle: number) => void;
 }
 
 interface PointerInfo {
@@ -54,21 +41,14 @@ interface PointerInfo {
 interface PinchInfo {
 	startDist: number;
 	startScale: number;
-	startMid: Point; // relative to viewport center
+	/** midpoint relative to the viewport center. */
+	startMid: Point;
 	startPan: Point;
 }
 
 /**
- * the discrete phase of the active gesture — the explicit state machine driving
- * arbitration. springs (scale/pan/track/dismiss) are the separate *continuous*
- * layer this commits into; they are not part of the machine.
- *
  *   idle ──pointerDown──▶ pending ──axis lock──▶ pan │ page │ dismiss ──up──▶ idle
  *     └────2nd pointer───▶ pinch ──last up──▶ (settle) idle
- *
- * `pending` is the undecided single-pointer phase (down, not yet axis-locked).
- * `returningToFit` rides on it so a drag begun mid-unzoom arbitrates as
- * un-zoomed (page/dismiss) instead of panning the still-shrinking image.
  */
 type Gesture =
 	| { kind: 'dismiss' }
@@ -85,59 +65,55 @@ type Gesture =
 
 const DOUBLE_TAP_MS = 300;
 const DOUBLE_TAP_DIST = 30;
-/** floor for the pinch start distance so a two-finger touchdown at (near-)identical points can't divide by zero. */
+/** prevents division by zero when pinch points overlap. */
 const PINCH_MIN_DIST = 1e-3;
 
+/** framework-agnostic lightbox gesture and animation state machine. */
 export class LightboxEngine {
 	/** live behavior config; mutate via {@link setConfig}. */
 	config: LightboxConfig;
-	#onDismiss?: () => void;
-	#now: () => number;
-	#raf: (cb: (t: number) => void) => number;
-	#caf: (handle: number) => void;
 
-	#viewport: Size = { width: 0, height: 0 };
+	// #region state
+
+	#caf: (handle: number) => void;
+	#now: () => number;
+	#onDismiss?: () => void;
+	#raf: (cb: (t: number) => void) => number;
+
 	#count = 1;
-	#naturalSizes: (Size | undefined)[] = [];
-	/** per-image rest (scale-1) display sizes; recomputed only on geometry/config change. */
 	#fittedSizes: Size[] = [];
+	#naturalSizes: (Size | undefined)[] = [];
+	#viewport: Size = { width: 0, height: 0 };
 
 	/** active image index; change via {@link goTo}/{@link next}/{@link prev}. */
 	index: number;
-	/** resting transforms for every image; the active one is mirrored by springs. */
 	#transforms: Transform[] = [];
 
-	// animated channels.
 	#trackX: Spring;
 	#dismissY: Spring;
 	#scale: Spring;
 	#panX: Spring;
 	#panY: Spring;
-	/** every animated channel; the single source of truth for "still moving". */
 	#channels: readonly Spring[];
 
-	// gesture bookkeeping.
-	#pointers = new Map<number, PointerInfo>();
-	/** discrete gesture phase; see {@link Gesture}. all per-phase data lives here. */
-	#gesture: Gesture = { kind: 'idle' };
-	#velocity = new VelocityTracker();
 	#lastTapTime = -Infinity;
 	#lastTapPos: Point = { x: 0, y: 0 };
+	#gesture: Gesture = { kind: 'idle' };
+	#pointers = new Map<number, PointerInfo>();
+	#velocity = new VelocityTracker();
 
-	// the rAF scheduling handle — pure mechanism (schedule/cancel/dedupe a frame).
-	// whether we're *animating* is derived from the springs, not from this.
-	#rafHandle: number | null = null;
-	#lastFrameTime = 0;
 	#emitter = new SimpleEventEmitter<[LightboxState]>();
-	/**
-	 * the last built snapshot, or null when invalidated. `getState` rebuilds
-	 * lazily and caches here so it returns a stable reference between changes —
-	 * exactly what `useSyncExternalStore`'s getSnapshot contract requires.
-	 */
+	#lastFrameTime = 0;
+	#rafHandle: number | null = null;
+	// `useSyncExternalStore` requires a stable snapshot between changes.
 	#snapshot: LightboxState | null = null;
 
+	// #endregion
+
 	/**
-	 * @param opts initial config, starting index, dismiss callback, and injectable clock/scheduler.
+	 * creates an engine.
+	 *
+	 * @param opts initial behavior and scheduler options.
 	 */
 	constructor(opts: EngineOptions = {}) {
 		this.config = normalizeConfig(opts.config);
@@ -159,8 +135,7 @@ export class LightboxEngine {
 	// #region configuration / geometry
 
 	/**
-	 * update the viewport, image count, and known natural sizes, re-snapping
-	 * layout to rest when no gesture or animation is in flight.
+	 * updates image geometry and restores idle layout.
 	 *
 	 * @param viewport current viewport size in px.
 	 * @param count number of images (floored at 1).
@@ -178,7 +153,6 @@ export class LightboxEngine {
 		}
 		this.#computeFittedSizes();
 		if (!this.#isActive()) {
-			// snap layout to rest when idle (e.g. on resize / open).
 			this.#trackX.set(-this.index * viewport.width);
 			this.#clampActivePanInstant();
 			this.#emit();
@@ -186,13 +160,12 @@ export class LightboxEngine {
 	}
 
 	/**
-	 * merge behavior overrides into the live config, re-fitting when idle.
+	 * updates behavior and refits idle images.
 	 *
-	 * @param config partial overrides applied over the current config.
+	 * @param config overrides for the current config.
 	 */
 	setConfig(config: Partial<LightboxConfig>): void {
 		this.config = normalizeConfig({ ...this.config, ...config });
-		// a fit-policy change (e.g. minCoverage) re-sizes images and pan bounds.
 		this.#computeFittedSizes();
 		if (!this.#isActive()) {
 			this.#clampActivePanInstant();
@@ -211,17 +184,20 @@ export class LightboxEngine {
 	 * @param animated whether to spring the track across; jumps instantly when false.
 	 */
 	goTo(index: number, animated = true): void {
-		const target = this.config.loop
-			? ((index % this.#count) + this.#count) % this.#count
-			: clamp(index, 0, this.#count - 1);
+		let target: number;
+		if (this.config.loop) {
+			target = ((index % this.#count) + this.#count) % this.#count;
+		} else {
+			target = clamp(index, 0, this.#count - 1);
+		}
 		if (target === this.index && animated) {
 			return;
 		}
-		this.#resetTransform(this.index); // reset zoom when paging away.
+		this.#resetTransform(this.index);
 		this.index = target;
 		this.#loadActiveTransform();
 		if (animated) {
-			this.#trackX.animateTo(-target * this.#viewport.width, undefined, SPRING.default);
+			this.#trackX.animateTo(-target * this.#viewport.width, { config: SPRING.default });
 			this.#startLoop();
 		} else {
 			this.#trackX.set(-target * this.#viewport.width);
@@ -240,9 +216,9 @@ export class LightboxEngine {
 	}
 
 	/**
-	 * clear all gesture state and transforms and jump to an index without animating.
+	 * resets all state at a clamped index.
 	 *
-	 * @param index index to rest at; clamped to range.
+	 * @param index index to rest at.
 	 */
 	reset(index = 0): void {
 		this.#cancelLoop();
@@ -261,35 +237,26 @@ export class LightboxEngine {
 	// #region pointer input
 
 	/**
-	 * register a pointer landing; a second pointer begins a pinch, and a quick
-	 * second tap near the last triggers a double-tap zoom toggle.
+	 * registers a pointer and starts a drag, pinch, or double-tap.
 	 *
 	 * @param id pointer id.
 	 * @param x pointer x relative to the viewport, in px.
 	 * @param y pointer y relative to the viewport, in px.
 	 */
 	pointerDown(id: number, x: number, y: number): void {
-		// capture before #stopSprings() freezes the spring: is an unzoom-to-fit
-		// in flight? a touch landing now is almost certainly the start of a
-		// swipe-to-page, so we let the settle finish rather than freeze a
-		// half-shrunk image and capture the drag as a pan.
+		// a drag started during unzoom must arbitrate as an unzoomed drag.
 		const returningToFit =
 			this.#scale.isAnimating &&
 			this.#scale.value > this.config.minScale + 0.001 &&
 			this.#scale.target <= this.config.minScale + 0.01;
-		// likewise capture an in-flight paging settle: a touch landing while the
-		// track is still springing to its target is almost certainly a tap or the
-		// start of another swipe. we don't resume it here — that would let the
-		// track drift during the undecided `pending` phase and fight a swipe that's
-		// about to take over. instead we stash it and, only if the gesture turns
-		// out to be a tap (no commit), resume it on release so the slide finishes.
-		const paging = this.#trackX.isAnimating
-			? { target: this.#trackX.target, velocity: this.#trackX.velocity }
-			: null;
+		// pause paging until the new gesture commits or ends as a tap.
+		let paging: { target: number; velocity: number } | null = null;
+		if (this.#trackX.isAnimating) {
+			paging = { target: this.#trackX.target, velocity: this.#trackX.velocity };
+		}
 		this.#stopSprings();
 		const t = this.#now();
 
-		// double-tap toggle (single new pointer landing near the last tap).
 		if (this.#pointers.size === 0) {
 			if (t - this.#lastTapTime < DOUBLE_TAP_MS && dist({ x, y }, this.#lastTapPos) < DOUBLE_TAP_DIST) {
 				this.#lastTapTime = -Infinity;
@@ -303,23 +270,24 @@ export class LightboxEngine {
 		this.#pointers.set(id, { x, y, startX: x, startY: y });
 		this.#velocity.reset(x, y, t);
 
-		if (this.#pointers.size === 2) {
-			this.#beginPinch();
-		} else if (this.#pointers.size === 1) {
-			const startPan: Point = { x: this.#panX.value, y: this.#panY.value };
-			this.#gesture = { kind: 'pending', paging, returningToFit, startPan };
-			if (returningToFit) {
-				// resume the interrupted return-to-fit (scale + recentre) so it settles
-				// underneath whatever the drag commits to (page/dismiss). unlike paging
-				// above, this must run during `pending`: a drag arbitrates against the
-				// shrinking image, so the scale has to keep moving, not freeze.
-				this.#scale.animateTo(this.config.minScale, 0, SPRING.scale);
-				this.#panX.animateTo(0, 0, SPRING.default);
-				this.#panY.animateTo(0, 0, SPRING.default);
-				this.#startLoop();
+		switch (this.#pointers.size) {
+			case 1: {
+				const startPan: Point = { x: this.#panX.value, y: this.#panY.value };
+				this.#gesture = { kind: 'pending', paging, returningToFit, startPan };
+				if (returningToFit) {
+					// continue unzoom while the new gesture waits for its axis lock.
+					this.#scale.animateTo(this.config.minScale, { velocity: 0, config: SPRING.scale });
+					this.#panX.animateTo(0, { velocity: 0, config: SPRING.default });
+					this.#panY.animateTo(0, { velocity: 0, config: SPRING.default });
+					this.#startLoop();
+				}
+				break;
+			}
+			case 2: {
+				this.#beginPinch();
+				break;
 			}
 		}
-		// a 3rd+ pointer leaves the active pinch untouched.
 		this.#emit();
 	}
 
@@ -339,8 +307,7 @@ export class LightboxEngine {
 		p.y = y;
 		this.#velocity.add(x, y, this.#now());
 
-		// only emit when something visible actually changed; a sub-threshold drag
-		// still pending an axis lock moves nothing, so it must not wake consumers.
+		// pending motion does not change visible state.
 		let changed: boolean;
 		if (this.#gesture.kind === 'pinch' && this.#pointers.size >= 2) {
 			this.#updatePinch(this.#gesture);
@@ -354,8 +321,7 @@ export class LightboxEngine {
 	}
 
 	/**
-	 * release a tracked pointer, settling the gesture (commit page, settle zoom,
-	 * dismiss, or spring back) once the last pointer lifts.
+	 * releases a tracked pointer and settles the gesture.
 	 *
 	 * @param id pointer id; ignored if not currently tracked.
 	 * @param x final pointer x in px, used to refine the release velocity when provided.
@@ -374,32 +340,19 @@ export class LightboxEngine {
 
 		if (this.#gesture.kind === 'pinch' && this.#pointers.size < 2) {
 			if (this.#pointers.size === 1) {
-				// two → one finger: re-anchor the survivor and continue as a pan. a
-				// finger surviving a pinch stays in image-manipulation mode — never
-				// page/dismiss — matching native pinch behavior, where lifting to one
-				// finger keeps the zoom rather than arming a swipe-to-dismiss. (the old
-				// at/below-fit path routed the survivor through `pending`, which re-opened
-				// dismiss arbitration; the surviving finger's lift-off drift could then
-				// commit a swipe-up the user never intended.)
+				// a pointer that survives a pinch remains an image pan.
 				const [survivor] = this.#pointers.values();
 				survivor.startX = survivor.x;
 				survivor.startY = survivor.y;
-				// the tracker holds interleaved samples from both pinch fingers, so its
-				// velocity is meaningless for the survivor — reseed from the survivor's
-				// position. otherwise that cross-finger noise gets seeded into the pan
-				// settle as a spurious fling, flinging the image off-axis on release (most
-				// visible on a narrow image, whose constrained axis snaps it back hard).
+				// pinch samples contain both pointers, so restart velocity tracking.
 				this.#velocity.reset(survivor.x, survivor.y, this.#now());
 				const startPan: Point = { x: this.#panX.value, y: this.#panY.value };
 				this.#gesture = { kind: 'pan', startPan };
 				if (this.#scale.value <= 1) {
-					// a pinch-out overshoot left the image at/below fit. spring scale (and
-					// the pan) back to fit underneath the continuing pan so it doesn't
-					// freeze shrunk; pan bounds collapse to ~0 at fit, so the lingering
-					// finger rubber-bands to nothing and #settleZoom finalizes on release.
-					this.#scale.animateTo(this.config.minScale, 0, SPRING.scale);
-					this.#panX.animateTo(0, 0, SPRING.default);
-					this.#panY.animateTo(0, 0, SPRING.default);
+					// keep an at-fit image settling while the remaining pointer pans.
+					this.#scale.animateTo(this.config.minScale, { velocity: 0, config: SPRING.scale });
+					this.#panX.animateTo(0, { velocity: 0, config: SPRING.default });
+					this.#panY.animateTo(0, { velocity: 0, config: SPRING.default });
 					this.#startLoop();
 				}
 				this.#emit();
@@ -416,7 +369,7 @@ export class LightboxEngine {
 	}
 
 	/**
-	 * trackpad pinch (ctrl+wheel) / mouse-wheel zoom around the cursor.
+	 * zooms around the cursor from wheel input.
 	 *
 	 * @param x cursor x relative to the viewport, in px.
 	 * @param y cursor y relative to the viewport, in px.
@@ -424,10 +377,7 @@ export class LightboxEngine {
 	 */
 	wheel(x: number, y: number, deltaY: number): void {
 		this.#stopSprings();
-		// a wheel zoom can interrupt a paging settle; snap the track to rest so the
-		// cursor-anchored zoom (#toCenter) is taken against a centered slide. wheel
-		// zooming is itself instant, so a snap — not a spring — keeps the two
-		// consistent. a no-op when already at rest.
+		// wheel zoom must anchor against a centered slide.
 		this.#trackX.set(-this.index * this.#viewport.width);
 		const focal = this.#toCenter(x, y);
 		const factor = Math.exp(-deltaY * 0.01);
@@ -441,13 +391,7 @@ export class LightboxEngine {
 	// #region gesture internals
 
 	#beginPinch(): void {
-		// a pinch can begin mid-page (#stopSprings froze the track part-way through
-		// its settle). snap it to rest before capturing the anchor below so the
-		// pinch midpoint (#toCenter) and start pan are taken against a centered
-		// slide, not one offset by the leftover paging distance. by the time two
-		// fingers coordinate down the track has nearly settled, so this is a small
-		// correction (a no-op when already at rest), and pinch tracks fingers
-		// instantly, so a snap stays consistent with the gesture.
+		// pinch anchors must use a centered slide after interrupted paging.
 		this.#trackX.set(-this.index * this.#viewport.width);
 		const [a, b] = [...this.#pointers.values()];
 		this.#gesture = {
@@ -463,58 +407,37 @@ export class LightboxEngine {
 		const [a, b] = [...this.#pointers.values()];
 		const newDist = dist(a, b);
 		const newMid = this.#toCenter((a.x + b.x) / 2, (a.y + b.y) / 2);
-		// floor the divisor: two pointers landing at (near-)identical points make
-		// startDist ~0, and an unguarded newDist / startDist poisons scale/pan with
-		// NaN (or Infinity), corrupting the active transform and its pan bounds.
+		// floor the divisor when pinch points overlap.
 		const raw = pinch.startScale * (newDist / Math.max(pinch.startDist, PINCH_MIN_DIST));
-		// allow slight overshoot past limits; it springs back on release.
 		const s = clamp(raw, this.config.minScale * 0.85, this.config.maxScale * 1.1);
-		// keep the content point originally under the midpoint pinned to the new midpoint.
 		const c = this.#contentPoint(pinch.startMid, pinch.startPan, pinch.startScale);
-		// hard-clamp the pinned pan to its bounds: a translating pinch would
-		// otherwise pin content past the image edge with no resistance, leaving pan
-		// far out of bounds. the moment the pinch drops to a single-finger pan that
-		// overflow gets re-mapped (rubber-band / settle), snapping the image. holding
-		// pan in-bounds during the pinch keeps the hand-off seamless — an in-bounds
-		// value passes through the pan's rubber-band clamp unchanged.
+		// clamping prevents a snap when pinch becomes a single-pointer pan.
 		const { maxX, maxY, minX, minY } = this.#panBounds(s);
 		this.#scale.set(s);
 		this.#panX.set(clamp(newMid.x - c.x * s, minX, maxX));
 		this.#panY.set(clamp(newMid.y - c.y * s, minY, maxY));
 	}
 
-	/**
-	 * @returns whether the drag changed any visible state (false while a pending
-	 * single-pointer drag is still below the axis-lock threshold).
-	 */
 	#updateDrag(p: PointerInfo): boolean {
 		const dx = p.x - p.startX;
 		const dy = p.y - p.startY;
 
-		// axis lock: pending → pan / page / dismiss once committed.
 		let g = this.#gesture;
 		if (g.kind === 'pending') {
-			// a still-settling unzoom counts as un-zoomed: arbitrate to page/dismiss.
 			const zoomed = this.#scale.value > 1.001 && !g.returningToFit;
 			if (zoomed) {
 				g = { kind: 'pan', startPan: g.startPan };
 			} else if (Math.abs(dx) > this.config.axisLockPx || Math.abs(dy) > this.config.axisLockPx) {
 				g = Math.abs(dx) > Math.abs(dy) ? { kind: 'page' } : { kind: 'dismiss' };
 			} else {
-				return false; // below the lock threshold: stay pending
+				return false;
 			}
 			this.#gesture = g;
 		}
 
 		switch (g.kind) {
-			case 'pan': {
-				const { maxX, maxY, minX, minY } = this.#panBounds(this.#scale.value);
-				this.#panX.set(
-					clampRubber(g.startPan.x + dx, minX, maxX, this.#viewport.width, this.config.rubberBand),
-				);
-				this.#panY.set(
-					clampRubber(g.startPan.y + dy, minY, maxY, this.#viewport.height, this.config.rubberBand),
-				);
+			case 'dismiss': {
+				this.#dismissY.set(dy);
 				break;
 			}
 			case 'page': {
@@ -528,8 +451,14 @@ export class LightboxEngine {
 				this.#trackX.set(tx);
 				break;
 			}
-			case 'dismiss': {
-				this.#dismissY.set(dy);
+			case 'pan': {
+				const { maxX, maxY, minX, minY } = this.#panBounds(this.#scale.value);
+				this.#panX.set(
+					clampRubber(g.startPan.x + dx, minX, maxX, this.#viewport.width, this.config.rubberBand),
+				);
+				this.#panY.set(
+					clampRubber(g.startPan.y + dy, minY, maxY, this.#viewport.height, this.config.rubberBand),
+				);
 				break;
 			}
 		}
@@ -541,14 +470,6 @@ export class LightboxEngine {
 		this.#gesture = { kind: 'idle' };
 
 		switch (g.kind) {
-			case 'pan': {
-				this.#settleZoom(v);
-				break;
-			}
-			case 'page': {
-				this.#commitPage(v.x);
-				break;
-			}
 			case 'dismiss': {
 				const pulled = this.#dismissY.value;
 				const commit =
@@ -556,20 +477,25 @@ export class LightboxEngine {
 				if (commit) {
 					this.#onDismiss?.();
 				}
-				// always spring the pull back to rest. when the owner closes (unmounts)
-				// this is moot; when it doesn't — no handler wired, an async/declined
-				// close, a controlled parent that ignores the request — the slide
-				// returns to rest instead of hanging half-dismissed with a faded scrim.
-				this.#dismissY.animateTo(0, v.y, SPRING.default);
+				// restore the slide if the owner does not close it.
+				this.#dismissY.animateTo(0, { velocity: v.y, config: SPRING.default });
 				this.#startLoop();
 				break;
 			}
+			case 'page': {
+				this.#commitPage(v.x);
+				break;
+			}
+			case 'pan': {
+				this.#settleZoom(v);
+				break;
+			}
 			default: {
-				// pending (tap / sub-threshold drag): nothing committed. if this tap
-				// interrupted a paging settle, resume it from where the touch froze it
-				// so the slide finishes instead of stopping dead under the finger.
 				if (g.kind === 'pending' && g.paging) {
-					this.#trackX.animateTo(g.paging.target, g.paging.velocity, SPRING.default);
+					this.#trackX.animateTo(g.paging.target, {
+						velocity: g.paging.velocity,
+						config: SPRING.default,
+					});
 					this.#startLoop();
 				} else {
 					this.#emit();
@@ -597,52 +523,49 @@ export class LightboxEngine {
 			this.index = target;
 			this.#loadActiveTransform();
 		}
-		this.#trackX.animateTo(-this.index * vw, vx, SPRING.default);
+		this.#trackX.animateTo(-this.index * vw, { velocity: vx, config: SPRING.default });
 		this.#startLoop();
 	}
 
 	#settleZoom(v: Point): void {
 		const minScale = this.config.minScale;
 		if (this.#scale.value <= minScale + 0.001) {
-			// snap fully back to fit.
-			this.#scale.animateTo(minScale, 0, SPRING.scale);
-			this.#panX.animateTo(0, v.x, SPRING.default);
-			this.#panY.animateTo(0, v.y, SPRING.default);
+			this.#scale.animateTo(minScale, { velocity: 0, config: SPRING.scale });
+			this.#panX.animateTo(0, { velocity: v.x, config: SPRING.default });
+			this.#panY.animateTo(0, { velocity: v.y, config: SPRING.default });
 		} else {
 			const targetScale = clamp(this.#scale.value, minScale, this.config.maxScale);
-			this.#scale.animateTo(targetScale, 0, SPRING.scale);
+			this.#scale.animateTo(targetScale, { velocity: 0, config: SPRING.scale });
 			const { maxX, maxY, minX, minY } = this.#panBounds(targetScale);
 			const projX = this.#panX.value + projectDecay(v.x);
 			const projY = this.#panY.value + projectDecay(v.y);
-			this.#panX.animateTo(clamp(projX, minX, maxX), v.x, SPRING.default);
-			this.#panY.animateTo(clamp(projY, minY, maxY), v.y, SPRING.default);
+			this.#panX.animateTo(clamp(projX, minX, maxX), { velocity: v.x, config: SPRING.default });
+			this.#panY.animateTo(clamp(projY, minY, maxY), { velocity: v.y, config: SPRING.default });
 		}
 		this.#startLoop();
 	}
 
 	#doubleTap(x: number, y: number): void {
-		// reached only with zero pointers down, so the gesture is already idle; a
-		// fresh zoom intent (in or out) is defined purely by the springs below.
-		//
-		// a double-tap can land mid-page (#stopSprings froze the track part-way
-		// through its settle). the zoom anchors against a centered slide via
-		// #toCenter, so spring the track home alongside it: this lands the zoom —
-		// and the letterbox around a non-filling image — exactly where it would
-		// have had the page finished first, instead of offset by the leftover
-		// paging distance. a no-op when already at rest.
-		this.#trackX.animateTo(-this.index * this.#viewport.width, 0, SPRING.default);
+		// complete interrupted paging so zoom anchors to the slide center.
+		this.#trackX.animateTo(-this.index * this.#viewport.width, { velocity: 0, config: SPRING.default });
 		const focal = this.#toCenter(x, y);
 		if (this.#scale.value > this.config.minScale + 0.01) {
-			this.#scale.animateTo(this.config.minScale, 0, SPRING.scale);
-			this.#panX.animateTo(0, 0, SPRING.default);
-			this.#panY.animateTo(0, 0, SPRING.default);
+			this.#scale.animateTo(this.config.minScale, { velocity: 0, config: SPRING.scale });
+			this.#panX.animateTo(0, { velocity: 0, config: SPRING.default });
+			this.#panY.animateTo(0, { velocity: 0, config: SPRING.default });
 		} else {
 			const s = this.config.doubleTapScale;
 			const c = this.#contentPoint(focal, { x: this.#panX.value, y: this.#panY.value }, this.#scale.value);
 			const { maxX, maxY, minX, minY } = this.#panBounds(s);
-			this.#scale.animateTo(s, 0, SPRING.scale);
-			this.#panX.animateTo(clamp(focal.x - c.x * s, minX, maxX), 0, SPRING.default);
-			this.#panY.animateTo(clamp(focal.y - c.y * s, minY, maxY), 0, SPRING.default);
+			this.#scale.animateTo(s, { velocity: 0, config: SPRING.scale });
+			this.#panX.animateTo(clamp(focal.x - c.x * s, minX, maxX), {
+				velocity: 0,
+				config: SPRING.default,
+			});
+			this.#panY.animateTo(clamp(focal.y - c.y * s, minY, maxY), {
+				velocity: 0,
+				config: SPRING.default,
+			});
 		}
 		this.#startLoop();
 	}
@@ -659,74 +582,50 @@ export class LightboxEngine {
 
 	// #region geometry helpers
 
-	/** screen point → coordinates relative to the rest center (viewport center shifted by `safeAreaInsets`). */
 	#toCenter(x: number, y: number): Point {
 		const off = this.#safeOffset();
 		return { x: x - this.#viewport.width / 2 - off.x, y: y - this.#viewport.height / 2 - off.y };
 	}
 
-	/** offset of the safe-area rest center from the viewport center, in px. */
 	#safeOffset(): Point {
-		const { bottom, left, right, top } = this.config.safeAreaInsets;
+		const { top, right, bottom, left } = this.config.safeAreaInsets;
 		return { x: (left - right) / 2, y: (top - bottom) / 2 };
 	}
 
-	/**
-	 * the content-space point currently sitting under a viewport-center-relative
-	 * focal point, for a given pan/scale — the anchor kept fixed while zooming.
-	 */
 	#contentPoint(focal: Point, pan: Point, scale: number): Point {
 		return { x: (focal.x - pan.x) / scale, y: (focal.y - pan.y) / scale };
 	}
 
-	/**
-	 * displayed (scale-1) size of an image under the `minCoverage` fit policy.
-	 * large images are downscaled to contain; small images are shown at natural
-	 * size unless that would cover less than `minCoverage` of the viewport, in
-	 * which case they're upscaled just enough to reach it.
-	 */
 	#fittedSize(i: number): Size {
 		const nat = this.#naturalSizes[i];
 		const vp = this.#viewport;
 		if (!nat || !nat.width || !nat.height || !vp.width || !vp.height) {
-			// size not yet known (no declared dimensions and the image hasn't
-			// loaded, or the viewport isn't measured). report zero rather than the
-			// viewport so the renderer leaves the <img> collapsed instead of
-			// stretching it full-bleed for a frame and then snapping it down to the
-			// real fitted size once the natural size lands.
-			return { height: 0, width: 0 };
+			// keep unknown images collapsed until both sizes are available.
+			return { width: 0, height: 0 };
 		}
-		// fit the viewport shrunk by safe-area insets, so a rest image clears the
-		// notch/chrome; `minCoverage` upscaling is likewise relative to this rect.
-		const { bottom, left, right, top } = this.config.safeAreaInsets;
+		const { top, right, bottom, left } = this.config.safeAreaInsets;
 		const usableW = Math.max(0, vp.width - left - right);
 		const usableH = Math.max(0, vp.height - top - bottom);
 		const containK = Math.min(usableW / nat.width, usableH / nat.height);
-		const k =
-			containK <= 1
-				? containK // larger than viewport → downscale to fit
-				: Math.min(containK, Math.max(1, this.config.minCoverage * containK));
+		let k: number;
+		if (containK <= 1) {
+			k = containK;
+		} else {
+			k = Math.min(containK, Math.max(1, this.config.minCoverage * containK));
+		}
 		return { width: nat.width * k, height: nat.height * k };
 	}
 
-	/** rebuild the cached per-image fitted sizes and invalidate the snapshot. */
 	#computeFittedSizes(): void {
 		this.#fittedSizes = Array.from({ length: this.#count }, (_, i) => this.#fittedSize(i));
 		this.#snapshot = null;
 	}
 
-	/**
-	 * pan limits per axis (pan is rest-relative, `0` at rest). overflow is measured
-	 * against the full viewport, so a zoomed image can pan out under `safeAreaInsets`
-	 * (the `off` shift lets its edges reach the physical edges); `overpanInsets`
-	 * widens each overflowing edge past edge-flush.
-	 */
 	#panBounds(scale: number): { maxX: number; maxY: number; minX: number; minY: number } {
 		const fit = this.#fittedSizes[this.index] ?? this.#fittedSize(this.index);
-		const { bottom, left, right, top } = this.config.overpanInsets;
+		const { top, right, bottom, left } = this.config.overpanInsets;
 		const off = this.#safeOffset();
-		// a non-overflowing axis has no edge to reveal (it's already letterboxed, so
-		// a gap is showing); only widen edges the image actually reaches.
+		// overpan applies only where the image reaches the viewport edge.
 		const overflowX = Math.max(0, (fit.width * scale - this.#viewport.width) / 2);
 		const overflowY = Math.max(0, (fit.height * scale - this.#viewport.height) / 2);
 		return {
@@ -760,21 +659,17 @@ export class LightboxEngine {
 
 	#stopSprings(): void {
 		this.#cancelLoop();
-		// freeze springs at their current values without snapping to target.
 		for (const s of this.#channels) {
-			s.animateTo(s.value); // target = value, then mark not-animating via set
 			s.set(s.value);
 		}
 	}
 
-	/** whether any animated channel is still settling — the canonical "animating". */
 	#springsAnimating(): boolean {
 		return this.#channels.some((s) => s.isAnimating);
 	}
 
 	#startLoop(): void {
-		// a deferred-emit path (goTo/settle/commit) just changed state; drop the
-		// cache so a synchronous getState() before the first tick rebuilds fresh.
+		// invalidate before the first deferred frame.
 		this.#snapshot = null;
 		if (this.#rafHandle !== null) {
 			return;
@@ -835,33 +730,38 @@ export class LightboxEngine {
 	}
 
 	#buildState(): LightboxState {
-		// pan is rest-relative internally; fold the safe-area offset back in here so
-		// the renderer (which centers each <img> in the viewport) lands the safe rect.
 		const off = this.#safeOffset();
 		const transforms = this.#transforms.map((t, i) => {
-			const base =
-				i === this.index ? { scale: this.#scale.value, x: this.#panX.value, y: this.#panY.value } : t;
+			let base = t;
+			if (i === this.index) {
+				base = { scale: this.#scale.value, x: this.#panX.value, y: this.#panY.value };
+			}
 			return { scale: base.scale, x: base.x + off.x, y: base.y + off.y };
 		});
 		const pulled = Math.abs(this.#dismissY.value);
 		const backdropOpacity = clamp(1 - pulled / this.config.dismissFadeDistancePx, 0, 1);
 		const g = this.#gesture;
-		// only the axis-locked single-pointer phases surface as a DragMode; idle,
-		// pending, and pinch all read as 'none' (pinch is flagged separately).
-		const dragMode: DragMode =
-			g.kind === 'dismiss' || g.kind === 'page' || g.kind === 'pan' ? g.kind : 'none';
+		let dragMode: DragMode = 'none';
+		switch (g.kind) {
+			case 'dismiss':
+			case 'page':
+			case 'pan': {
+				dragMode = g.kind;
+				break;
+			}
+		}
 		return {
-			backdropOpacity,
-			dismissY: this.#dismissY.value,
-			dragMode,
-			fittedSizes: this.#fittedSizes,
 			index: this.index,
-			isAnimating: this.#springsAnimating(),
+			transforms,
+			fittedSizes: this.#fittedSizes,
+			trackX: this.#trackX.value,
+			dismissY: this.#dismissY.value,
+			backdropOpacity,
+			dragMode,
 			isDragging: this.#pointers.size > 0,
 			isPinching: g.kind === 'pinch',
 			isZoomed: this.#scale.value > 1.01,
-			trackX: this.#trackX.value,
-			transforms,
+			isAnimating: this.#springsAnimating(),
 		};
 	}
 
@@ -870,10 +770,10 @@ export class LightboxEngine {
 		this.#emitter.emit(this.#snapshot);
 	}
 
-	/** cancel any running loop, drop all subscribers, and release pointers. */
+	/** releases animation, subscribers, and pointers. */
 	destroy(): void {
 		this.#cancelLoop();
-		// drop every subscriber by swapping in a fresh emitter (it has no clear()).
+		// the emitter has no clear operation.
 		this.#emitter = new SimpleEventEmitter<[LightboxState]>();
 		this.#pointers.clear();
 	}
@@ -885,69 +785,60 @@ const dist = (a: Point, b: Point): number => {
 	return Math.hypot(a.x - b.x, a.y - b.y);
 };
 
-// per-field guards: a missing or out-of-range value falls back, else passes through.
-// allow [0, Infinity] (Infinity is a valid "never" sentinel); reject missing/NaN/negative.
-const cfgSpan = (v: number | undefined, fallback: number): number =>
-	v === undefined || Number.isNaN(v) || v < 0 ? fallback : v;
-// finite and strictly positive.
-const cfgPositive = (v: number | undefined, fallback: number): number =>
-	v !== undefined && Number.isFinite(v) && v > 0 ? v : fallback;
-// finite, clamped to [lo, hi].
-const cfgRatio = (v: number | undefined, fallback: number, lo: number, hi: number): number =>
-	v !== undefined && Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
-// finite and nonnegative; rejects missing/NaN/negative/Infinity. for spans
-// subtracted from the viewport, where Infinity would collapse the usable rect.
+// #region config validation
+
 const cfgFiniteSpan = (v: number | undefined, fallback: number): number =>
 	v !== undefined && Number.isFinite(v) && v >= 0 ? v : fallback;
-// per-edge spans; a missing object or edge falls back to 0.
 const cfgInsets = (
 	v: Insets | undefined,
 	guard: (n: number | undefined, fallback: number) => number,
 ): Insets => ({
+	top: guard(v?.top, 0),
+	right: guard(v?.right, 0),
 	bottom: guard(v?.bottom, 0),
 	left: guard(v?.left, 0),
-	right: guard(v?.right, 0),
-	top: guard(v?.top, 0),
 });
+const cfgPositive = (v: number | undefined, fallback: number): number =>
+	v !== undefined && Number.isFinite(v) && v > 0 ? v : fallback;
+const cfgRatio = (v: number | undefined, fallback: number, lo: number, hi: number): number =>
+	v !== undefined && Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
+// infinity is a valid sentinel for thresholds and velocities.
+const cfgSpan = (v: number | undefined, fallback: number): number =>
+	v === undefined || Number.isNaN(v) || v < 0 ? fallback : v;
 
-/**
- * the sole config defaulting + validation boundary: missing or out-of-range
- * fields fall back to {@link DEFAULT_CONFIG}, so callers pass a raw partial.
- *
- * @param config caller overrides; any field may be omitted, invalid, or out of range.
- * @returns a complete, sanitized config.
- */
 const normalizeConfig = (config: Partial<LightboxConfig> = {}): LightboxConfig => {
 	const minScale = cfgPositive(config.minScale, DEFAULT_CONFIG.minScale);
 	const maxScale = Math.max(minScale, cfgPositive(config.maxScale, DEFAULT_CONFIG.maxScale));
+	let dismissFadeDistancePx = DEFAULT_CONFIG.dismissFadeDistancePx;
+	if (
+		config.dismissFadeDistancePx !== undefined &&
+		!Number.isNaN(config.dismissFadeDistancePx) &&
+		config.dismissFadeDistancePx > 0
+	) {
+		// infinity disables fading.
+		dismissFadeDistancePx = config.dismissFadeDistancePx;
+	}
 	return {
 		axisLockPx: cfgSpan(config.axisLockPx, DEFAULT_CONFIG.axisLockPx),
-		closeOnBackdropClick: config.closeOnBackdropClick ?? DEFAULT_CONFIG.closeOnBackdropClick,
-		// divides the backdrop fade — must be > 0; Infinity (never fade) is fine.
-		dismissFadeDistancePx:
-			config.dismissFadeDistancePx === undefined ||
-			Number.isNaN(config.dismissFadeDistancePx) ||
-			config.dismissFadeDistancePx <= 0
-				? DEFAULT_CONFIG.dismissFadeDistancePx
-				: config.dismissFadeDistancePx,
+		pageThresholdRatio: cfgRatio(config.pageThresholdRatio, DEFAULT_CONFIG.pageThresholdRatio, 0, 1),
+		pageFlingVelocity: cfgSpan(config.pageFlingVelocity, DEFAULT_CONFIG.pageFlingVelocity),
+		loop: config.loop ?? DEFAULT_CONFIG.loop,
 		dismissThresholdPx: cfgSpan(config.dismissThresholdPx, DEFAULT_CONFIG.dismissThresholdPx),
 		dismissVelocity: cfgSpan(config.dismissVelocity, DEFAULT_CONFIG.dismissVelocity),
+		dismissFadeDistancePx,
+		closeOnBackdropClick: config.closeOnBackdropClick ?? DEFAULT_CONFIG.closeOnBackdropClick,
+		minScale,
+		maxScale,
 		doubleTapScale: clamp(
 			cfgPositive(config.doubleTapScale, DEFAULT_CONFIG.doubleTapScale),
 			minScale,
 			maxScale,
 		),
-		loop: config.loop ?? DEFAULT_CONFIG.loop,
-		maxScale,
 		minCoverage: cfgRatio(config.minCoverage, DEFAULT_CONFIG.minCoverage, 0, 1),
-		minScale,
-		overpanInsets: cfgInsets(config.overpanInsets, cfgSpan),
-		pageFlingVelocity: cfgSpan(config.pageFlingVelocity, DEFAULT_CONFIG.pageFlingVelocity),
-		pageThresholdRatio: cfgRatio(config.pageThresholdRatio, DEFAULT_CONFIG.pageThresholdRatio, 0, 1),
 		rubberBand: cfgRatio(config.rubberBand, DEFAULT_CONFIG.rubberBand, 0, 1),
+		overpanInsets: cfgInsets(config.overpanInsets, cfgSpan),
 		safeAreaInsets: cfgInsets(config.safeAreaInsets, cfgFiniteSpan),
 	};
 };
 
-// re-export so the React layer can build rubber-band previews if needed.
-export { rubberBand };
+// #endregion

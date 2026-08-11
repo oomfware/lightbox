@@ -22,7 +22,7 @@ const images: LightboxImage[] = [
 	{ src: '/photos/pug.jpg', alt: 'Pug in a blanket', width: 1600, height: 1067 },
 ];
 
-function Gallery() {
+const Gallery = () => {
 	const [open, setOpen] = useState(false);
 	const [index, setIndex] = useState(0);
 
@@ -59,7 +59,7 @@ function Gallery() {
 			</Lightbox.Root>
 		</>
 	);
-}
+};
 ```
 
 `Track` renders one `Slide` containing one `Image` per entry by default, so the example above is a
@@ -80,7 +80,7 @@ fully interactive viewer directly in the page — no modal, portal, focus trap, 
 import { Lightbox } from '@oomfware/lightbox';
 import { useState } from 'react';
 
-function InlineViewer() {
+const InlineViewer = () => {
 	const [index, setIndex] = useState(0);
 
 	return (
@@ -92,7 +92,7 @@ function InlineViewer() {
 			</div>
 		</Lightbox.Provider>
 	);
-}
+};
 ```
 
 the same primitive powers a custom modal: render `Provider` + `Viewport` inside your own overlay and
@@ -225,7 +225,7 @@ alone does not re-render every frame:
 ```tsx
 import { useLightbox, useLightboxState } from '@oomfware/lightbox';
 
-function Counter() {
+const Counter = () => {
 	const { images, next, prev } = useLightbox();
 	const index = useLightboxState((state) => state.index);
 
@@ -240,7 +240,7 @@ function Counter() {
 			</button>
 		</div>
 	);
-}
+};
 ```
 
 `useLightboxState` subscribes to the live engine state. pass a selector to re-render only when the
@@ -251,7 +251,6 @@ is unchanged:
 const isZoomed = useLightboxState((state) => state.isZoomed);
 const dismissY = useLightboxState((state) => state.dismissY);
 
-// or read the whole snapshot (re-renders every frame a gesture is live)
 const state = useLightboxState();
 ```
 
@@ -263,8 +262,6 @@ app-level behaviors the headless core stays out of, like toggling chrome visibil
 ```tsx
 <Lightbox.Viewport
 	onTap={(info) => {
-		// info.onImage: did the tap land on the image (vs. the backdrop / chrome)?
-		// info.pointerType: 'mouse' | 'touch' | 'pen'
 		if (info.pointerType === 'touch') {
 			setChromeHidden((hidden) => !hidden);
 		}
@@ -290,9 +287,7 @@ const engine = new LightboxEngine({ index: 0, config: { loop: true } });
 engine.setGeometry(viewportSize, imageCount, naturalSizes);
 const unsubscribe = engine.subscribe(() => render(engine.getState()));
 
-// feed it pointer / wheel input, then read state.transforms / state.trackX each frame
 engine.pointerDown(pointerId, x, y);
 
-// release the rAF loop and subscribers when you're done
 engine.destroy();
 ```
