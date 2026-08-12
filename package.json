@@ -5,7 +5,7 @@
 	"license": "0BSD",
 	"repository": {
 		"type": "git",
-		"url": "https://codeberg.org/oomfware/lightbox"
+		"url": "https://tangled.org/did:plc:ezq5yzyevn2aio5g3e4ulbwl"
 	},
 	"files": [
 		"dist/"
