@@ -27,6 +27,9 @@ export interface LightboxViewportProps extends ComponentPropsWithoutRef<'div'> {
 
 const TAP_SLOP = 6;
 
+const PASSTHROUGH_SELECTOR =
+	'button, a, input, [role="button"], [data-lightbox-control], [data-lightbox-passthrough]';
+
 /**
  * renders the gesture and keyboard input surface.
  *
@@ -140,7 +143,8 @@ export const Viewport = (props: LightboxViewportProps) => {
 			return undefined;
 		}
 		const onTouchMove = (e: TouchEvent) => {
-			if (e.cancelable) {
+			const target = e.target instanceof Element ? e.target : null;
+			if (e.cancelable && !target?.closest(PASSTHROUGH_SELECTOR)) {
 				e.preventDefault();
 			}
 		};
@@ -155,9 +159,8 @@ export const Viewport = (props: LightboxViewportProps) => {
 	const handlePointerDown = useCallback(
 		(e: ReactPointerEvent<HTMLDivElement>) => {
 			onPointerDown?.(e);
-			// controls must keep ownership of their pointer events.
 			const target = e.target instanceof Element ? e.target : null;
-			if (target?.closest('button, a, input, [role="button"], [data-lightbox-control]')) {
+			if (target?.closest(PASSTHROUGH_SELECTOR)) {
 				down.current = null;
 				return;
 			}
@@ -271,7 +274,11 @@ export const Viewport = (props: LightboxViewportProps) => {
 				return;
 			}
 			const target = e.target instanceof Element ? e.target : null;
-			if (target?.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) {
+			if (
+				target?.closest(
+					'input, textarea, select, [contenteditable=""], [contenteditable="true"], [data-lightbox-passthrough]',
+				)
+			) {
 				return;
 			}
 			switch (e.key) {
